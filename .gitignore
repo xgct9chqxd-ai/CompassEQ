@@ -18,3 +18,6 @@ Makefile
 JuceLibraryCode/
 .DS_Store
 build/
+
+# Never track embedded repos
+1_Core/CMB_Core/
