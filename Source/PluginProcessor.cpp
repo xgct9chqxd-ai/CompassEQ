@@ -15,7 +15,7 @@ CompassEQAudioProcessor::CompassEQAudioProcessor()
                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true))
 #endif
 {
-    parameterState       = std::make_unique<ParameterState>();
+    parameterState = std::make_unique<ParameterState>(*this);
     router               = std::make_unique<Router>();
     meterBus             = std::make_unique<MeterBus>();
     oversamplingManager  = std::make_unique<OversamplingManager>();
@@ -91,12 +91,30 @@ juce::AudioProcessorEditor* CompassEQAudioProcessor::createEditor()
 
 void CompassEQAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    juce::ignoreUnused (destData);
+    if (parameterState)
+    {
+        auto state = parameterState->getAPVTS().copyState();
+        std::unique_ptr<juce::XmlElement> xml (state.createXml());
+        copyXmlToBinary (*xml, destData);
+        return;
+    }
+
+    destData.reset();
 }
 
 void CompassEQAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    juce::ignoreUnused (data, sizeInBytes);
+    if (! parameterState)
+        return;
+
+    std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
+    if (xmlState != nullptr)
+    {
+        if (xmlState->hasTagName (parameterState->getAPVTS().state.getType()))
+        {
+            parameterState->getAPVTS().replaceState (juce::ValueTree::fromXml (*xmlState));
+        }
+    }
 }
 
 } // namespace compass
