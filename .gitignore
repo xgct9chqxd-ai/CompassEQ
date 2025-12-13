@@ -16,3 +16,5 @@ Makefile
 # JUCE/IDE artefacts
 *_artefacts/
 JuceLibraryCode/
+.DS_Store
+build/
