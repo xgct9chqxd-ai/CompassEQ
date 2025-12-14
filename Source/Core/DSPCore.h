@@ -1,7 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
 #include <vector>
-#include <memory>
 #include <cmath>
 
 namespace compass
@@ -20,32 +19,15 @@ public:
         hp1_x1.assign ((size_t) channels, 0.0f);
         hp1_y1.assign ((size_t) channels, 0.0f);
 
-        // per-channel IIR filters (must NOT share state across channels)
-        hpf2.clear();
-        lpf2.clear();
-        lfShelf.clear();
-        lmfPeak.clear();
-        hmfPeak.clear();
-        hfShelf.clear();
+        // per-channel biquad states (HPF2, LF shelf, LMF peak, HMF peak, HF shelf, LPF2)
+        hpf2.assign    ((size_t) channels, Biquad{});
+        lfShelf.assign ((size_t) channels, Biquad{});
+        lmfPeak.assign ((size_t) channels, Biquad{});
+        hmfPeak.assign ((size_t) channels, Biquad{});
+        hfShelf.assign ((size_t) channels, Biquad{});
+        lpf2.assign    ((size_t) channels, Biquad{});
 
-        hpf2.reserve    ((size_t) channels);
-        lpf2.reserve    ((size_t) channels);
-        lfShelf.reserve ((size_t) channels);
-        lmfPeak.reserve ((size_t) channels);
-        hmfPeak.reserve ((size_t) channels);
-        hfShelf.reserve ((size_t) channels);
-
-        for (int ch = 0; ch < channels; ++ch)
-        {
-            hpf2.emplace_back    (std::make_unique<juce::IIRFilter>());
-            lfShelf.emplace_back (std::make_unique<juce::IIRFilter>());
-            lmfPeak.emplace_back (std::make_unique<juce::IIRFilter>());
-            hmfPeak.emplace_back (std::make_unique<juce::IIRFilter>());
-            hfShelf.emplace_back (std::make_unique<juce::IIRFilter>());
-            lpf2.emplace_back    (std::make_unique<juce::IIRFilter>());
-        }
-
-        constexpr double smoothTimeSec = 0.02; // 20 ms (no zipper; minimal lag)
+        constexpr double smoothTimeSec = 0.02; // 20 ms
 
         // trims + filters
         inTrimLin.reset  (sr, smoothTimeSec);
@@ -54,92 +36,73 @@ public:
         lpfHzSm.reset    (sr, smoothTimeSec);
 
         // bands
-        lfFreqSm.reset   (sr, smoothTimeSec);
-        lfGainDbSm.reset (sr, smoothTimeSec);
+        lfFreqSm.reset    (sr, smoothTimeSec);
+        lfGainDbSm.reset  (sr, smoothTimeSec);
 
-        lmfFreqSm.reset  (sr, smoothTimeSec);
-        lmfGainDbSm.reset(sr, smoothTimeSec);
-        lmfQSm.reset     (sr, smoothTimeSec);
+        lmfFreqSm.reset   (sr, smoothTimeSec);
+        lmfGainDbSm.reset (sr, smoothTimeSec);
+        lmfQSm.reset      (sr, smoothTimeSec);
 
-        hmfFreqSm.reset  (sr, smoothTimeSec);
-        hmfGainDbSm.reset(sr, smoothTimeSec);
-        hmfQSm.reset     (sr, smoothTimeSec);
+        hmfFreqSm.reset   (sr, smoothTimeSec);
+        hmfGainDbSm.reset (sr, smoothTimeSec);
+        hmfQSm.reset      (sr, smoothTimeSec);
 
-        hfFreqSm.reset   (sr, smoothTimeSec);
-        hfGainDbSm.reset (sr, smoothTimeSec);
+        hfFreqSm.reset    (sr, smoothTimeSec);
+        hfGainDbSm.reset  (sr, smoothTimeSec);
 
-        // defaults (Phase 1 numeric defaults are owned upstream; we only set safe initial values here)
+        // safe initial values (owned upstream; we just initialize)
         inTrimLin.setCurrentAndTargetValue  (1.0f);
         outTrimLin.setCurrentAndTargetValue (1.0f);
 
-        hpfHzSm.setCurrentAndTargetValue (HPF_MIN);
-        lpfHzSm.setCurrentAndTargetValue (LPF_MAX);
+        hpfHzSm.setCurrentAndTargetValue (20.0f);
+        lpfHzSm.setCurrentAndTargetValue (20000.0f);
 
-        lfFreqSm.setCurrentAndTargetValue  (LF_FREQ_DEF);
-        lfGainDbSm.setCurrentAndTargetValue(0.0f);
+        lfFreqSm.setCurrentAndTargetValue    (100.0f);
+        lfGainDbSm.setCurrentAndTargetValue  (0.0f);
 
-        lmfFreqSm.setCurrentAndTargetValue (LMF_FREQ_DEF);
-        lmfGainDbSm.setCurrentAndTargetValue(0.0f);
-        lmfQSm.setCurrentAndTargetValue    (Q_DEF);
+        lmfFreqSm.setCurrentAndTargetValue   (1000.0f);
+        lmfGainDbSm.setCurrentAndTargetValue (0.0f);
+        lmfQSm.setCurrentAndTargetValue      (1.0f);
 
-        hmfFreqSm.setCurrentAndTargetValue (HMF_FREQ_DEF);
-        hmfGainDbSm.setCurrentAndTargetValue(0.0f);
-        hmfQSm.setCurrentAndTargetValue    (Q_DEF);
+        hmfFreqSm.setCurrentAndTargetValue   (3000.0f);
+        hmfGainDbSm.setCurrentAndTargetValue (0.0f);
+        hmfQSm.setCurrentAndTargetValue      (1.0f);
 
-        hfFreqSm.setCurrentAndTargetValue  (HF_FREQ_DEF);
-        hfGainDbSm.setCurrentAndTargetValue(0.0f);
+        hfFreqSm.setCurrentAndTargetValue    (8000.0f);
+        hfGainDbSm.setCurrentAndTargetValue  (0.0f);
 
-        // force initial coefficient build
         invalidateAllLastValues();
 
-        updateFirstOrderHPF (HPF_MIN);
-
-        // Init coeffs once
-        const auto hp = juce::IIRCoefficients::makeHighPass (sr, (double) HPF_MIN, (double) BUTTER_Q);
-        const auto lp = juce::IIRCoefficients::makeLowPass  (sr, (double) LPF_MAX, (double) BUTTER_Q);
-
-        const auto lf = juce::IIRCoefficients::makeLowShelf  (sr, (double) LF_FREQ_DEF, (double) SHELF_Q, 1.0);
-        const auto hf = juce::IIRCoefficients::makeHighShelf (sr, (double) HF_FREQ_DEF, (double) SHELF_Q, 1.0);
-
-        const auto lmf = juce::IIRCoefficients::makePeakFilter (sr, (double) LMF_FREQ_DEF, (double) Q_DEF, 1.0);
-        const auto hmf = juce::IIRCoefficients::makePeakFilter (sr, (double) HMF_FREQ_DEF, (double) Q_DEF, 1.0);
-
-        for (int ch = 0; ch < channels; ++ch)
-        {
-            hpf2[(size_t) ch]->setCoefficients (hp);
-            lfShelf[(size_t) ch]->setCoefficients (lf);
-            lmfPeak[(size_t) ch]->setCoefficients (lmf);
-            hmfPeak[(size_t) ch]->setCoefficients (hmf);
-            hfShelf[(size_t) ch]->setCoefficients (hf);
-            lpf2[(size_t) ch]->setCoefficients (lp);
-        }
+        // build initial coefficients (NO audio-thread allocations; pure math)
+        updateFirstOrderHPF (hpfHzSm.getCurrentValue());
+        rebuildAllBiquads();
 
         reset();
     }
 
     inline void reset() noexcept
     {
-        for (auto& f : hpf2)    if (f) f->reset();
-        for (auto& f : lfShelf) if (f) f->reset();
-        for (auto& f : lmfPeak) if (f) f->reset();
-        for (auto& f : hmfPeak) if (f) f->reset();
-        for (auto& f : hfShelf) if (f) f->reset();
-        for (auto& f : lpf2)    if (f) f->reset();
+        for (auto& b : hpf2)    b.reset();
+        for (auto& b : lfShelf) b.reset();
+        for (auto& b : lmfPeak) b.reset();
+        for (auto& b : hmfPeak) b.reset();
+        for (auto& b : hfShelf) b.reset();
+        for (auto& b : lpf2)    b.reset();
 
-        for (int ch = 0; ch < (int) hp1_x1.size(); ++ch)
+        for (size_t ch = 0; ch < hp1_x1.size(); ++ch)
         {
-            hp1_x1[(size_t) ch] = 0.0f;
-            hp1_y1[(size_t) ch] = 0.0f;
+            hp1_x1[ch] = 0.0f;
+            hp1_y1[ch] = 0.0f;
         }
     }
 
-    // Phase 2A-2 targets (trims + HPF/LPF)
+    // Phase 2A targets (trims + HPF/LPF)
     inline void setTargets (float inTrimDb, float outTrimDb, float hpfHz, float lpfHz) noexcept
     {
         inTrimLin.setTargetValue  (juce::Decibels::decibelsToGain (inTrimDb));
         outTrimLin.setTargetValue (juce::Decibels::decibelsToGain (outTrimDb));
-        hpfHzSm.setTargetValue (juce::jlimit (HPF_MIN, HPF_MAX, hpfHz));
-        lpfHzSm.setTargetValue (juce::jlimit (LPF_MIN, LPF_MAX, lpfHz));
+        hpfHzSm.setTargetValue (sanitizeHz (hpfHz));
+        lpfHzSm.setTargetValue (sanitizeHz (lpfHz));
     }
 
     // Phase 2B targets (EQ bands)
@@ -149,19 +112,19 @@ public:
         float hmfFreqHz, float hmfGainDb, float hmfQ,
         float hfFreqHz, float hfGainDb) noexcept
     {
-        lfFreqSm.setTargetValue    (juce::jlimit (LF_FREQ_MIN,  LF_FREQ_MAX,  lfFreqHz));
-        lfGainDbSm.setTargetValue  (juce::jlimit (GAIN_MIN,     GAIN_MAX,     lfGainDb));
+        lfFreqSm.setTargetValue    (sanitizeHz (lfFreqHz));
+        lfGainDbSm.setTargetValue  (sanitizeDb (lfGainDb));
 
-        lmfFreqSm.setTargetValue   (juce::jlimit (LMF_FREQ_MIN, LMF_FREQ_MAX, lmfFreqHz));
-        lmfGainDbSm.setTargetValue (juce::jlimit (GAIN_MIN,     GAIN_MAX,     lmfGainDb));
-        lmfQSm.setTargetValue      (juce::jlimit (Q_MIN,        Q_MAX,        lmfQ));
+        lmfFreqSm.setTargetValue   (sanitizeHz (lmfFreqHz));
+        lmfGainDbSm.setTargetValue (sanitizeDb (lmfGainDb));
+        lmfQSm.setTargetValue      (sanitizeQ  (lmfQ));
 
-        hmfFreqSm.setTargetValue   (juce::jlimit (HMF_FREQ_MIN, HMF_FREQ_MAX, hmfFreqHz));
-        hmfGainDbSm.setTargetValue (juce::jlimit (GAIN_MIN,     GAIN_MAX,     hmfGainDb));
-        hmfQSm.setTargetValue      (juce::jlimit (Q_MIN,        Q_MAX,        hmfQ));
+        hmfFreqSm.setTargetValue   (sanitizeHz (hmfFreqHz));
+        hmfGainDbSm.setTargetValue (sanitizeDb (hmfGainDb));
+        hmfQSm.setTargetValue      (sanitizeQ  (hmfQ));
 
-        hfFreqSm.setTargetValue    (juce::jlimit (HF_FREQ_MIN,  HF_FREQ_MAX,  hfFreqHz));
-        hfGainDbSm.setTargetValue  (juce::jlimit (GAIN_MIN,     GAIN_MAX,     hfGainDb));
+        hfFreqSm.setTargetValue    (sanitizeHz (hfFreqHz));
+        hfGainDbSm.setTargetValue  (sanitizeDb (hfGainDb));
     }
 
     inline void process (juce::AudioBuffer<float>& buffer) noexcept
@@ -193,7 +156,7 @@ public:
             hfFreqSm.getNextValue();
             hfGainDbSm.getNextValue();
 
-            updateFiltersIfNeeded (i);
+            updateFiltersIfNeeded (i); // pure float math only
 
             for (int ch = 0; ch < chs; ++ch)
             {
@@ -203,17 +166,17 @@ public:
                 x *= inG;
 
                 // HPF 18 dB/oct = 12 dB biquad + 6 dB first-order
-                x = hpf2[(size_t) ch]->processSingleSampleRaw (x);
+                x = hpf2[(size_t) ch].process (x);
                 x = processFirstOrderHPF (ch, x);
 
                 // EQ Bands (fixed topology)
-                x = lfShelf[(size_t) ch]->processSingleSampleRaw (x);
-                x = lmfPeak[(size_t) ch]->processSingleSampleRaw (x);
-                x = hmfPeak[(size_t) ch]->processSingleSampleRaw (x);
-                x = hfShelf[(size_t) ch]->processSingleSampleRaw (x);
+                x = lfShelf[(size_t) ch].process (x);
+                x = lmfPeak[(size_t) ch].process (x);
+                x = hmfPeak[(size_t) ch].process (x);
+                x = hfShelf[(size_t) ch].process (x);
 
                 // LPF 12 dB/oct biquad
-                x = lpf2[(size_t) ch]->processSingleSampleRaw (x);
+                x = lpf2[(size_t) ch].process (x);
 
                 // Output Trim
                 x *= outG;
@@ -224,42 +187,197 @@ public:
     }
 
 private:
-    // HPF/LPF
-    static constexpr float HPF_MIN = 20.0f;
-    static constexpr float HPF_MAX = 1000.0f;
-    static constexpr float LPF_MIN = 3000.0f;
-    static constexpr float LPF_MAX = 20000.0f;
-
-    // bands (Phase 1 numeric spec)
-    static constexpr float LF_FREQ_MIN  = 20.0f;
-    static constexpr float LF_FREQ_MAX  = 800.0f;
-    static constexpr float LF_FREQ_DEF  = 100.0f;
-
-    static constexpr float LMF_FREQ_MIN = 120.0f;
-    static constexpr float LMF_FREQ_MAX = 4000.0f;
-    static constexpr float LMF_FREQ_DEF = 1000.0f;
-
-    static constexpr float HMF_FREQ_MIN = 600.0f;
-    static constexpr float HMF_FREQ_MAX = 15000.0f;
-    static constexpr float HMF_FREQ_DEF = 3000.0f;
-
-    static constexpr float HF_FREQ_MIN  = 1500.0f;
-    static constexpr float HF_FREQ_MAX  = 22000.0f;
-    static constexpr float HF_FREQ_DEF  = 8000.0f;
-
-    static constexpr float GAIN_MIN = -18.0f;
-    static constexpr float GAIN_MAX = 18.0f;
-
-    static constexpr float Q_MIN  = 0.5f;
-    static constexpr float Q_MAX  = 2.0f;
-    static constexpr float Q_DEF  = 1.0f;
-
-    static constexpr float BUTTER_Q = 0.7071067811865476f;
-    static constexpr float SHELF_Q  = 0.7071067811865476f; // fixed musical shelf Q (non-selectable)
-
-    inline static double dbToGain (float db) noexcept
+    // ---------- RT-safe biquad ----------
+    struct Biquad
     {
-        return (double) juce::Decibels::decibelsToGain (db);
+        // normalized coefficients (a0 = 1)
+        float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f;
+        float a1 = 0.0f, a2 = 0.0f;
+
+        // DF2T state
+        float z1 = 0.0f, z2 = 0.0f;
+
+        inline void reset() noexcept { z1 = 0.0f; z2 = 0.0f; }
+
+        inline float process (float x) noexcept
+        {
+            const float y = b0 * x + z1;
+            z1 = b1 * x - a1 * y + z2;
+            z2 = b2 * x - a2 * y;
+            return y;
+        }
+    };
+
+    // ---------- sanitize helpers (no “Phase law” embedded; just safety clamps) ----------
+    inline float sanitizeHz (float hz) const noexcept
+    {
+        const float minHz = 1.0f;
+        const float maxHz = (float) (sr * 0.45);
+        return juce::jlimit (minHz, maxHz, hz);
+    }
+
+    inline static float sanitizeQ (float q) noexcept
+    {
+        return juce::jlimit (0.05f, 10.0f, q);
+    }
+
+    inline static float sanitizeDb (float db) noexcept
+    {
+        return juce::jlimit (-48.0f, 48.0f, db);
+    }
+
+    inline static float dbToA (float db) noexcept
+    {
+        // A = sqrt(10^(dB/20)) = 10^(dB/40)
+        return std::pow (10.0f, db / 40.0f);
+    }
+
+    // ---------- RBJ coefficient builders (pure math; no allocation) ----------
+    inline void makeLowPass (Biquad& bq, float hz, float q) noexcept
+    {
+        const float w0 = 2.0f * juce::MathConstants<float>::pi * hz / (float) sr;
+        const float cw = std::cos (w0);
+        const float sw = std::sin (w0);
+        const float alpha = sw / (2.0f * q);
+
+        float b0 =  (1.0f - cw) * 0.5f;
+        float b1 =   1.0f - cw;
+        float b2 =  (1.0f - cw) * 0.5f;
+        float a0 =   1.0f + alpha;
+        float a1 =  -2.0f * cw;
+        float a2 =   1.0f - alpha;
+
+        const float invA0 = 1.0f / a0;
+        bq.b0 = b0 * invA0;
+        bq.b1 = b1 * invA0;
+        bq.b2 = b2 * invA0;
+        bq.a1 = a1 * invA0;
+        bq.a2 = a2 * invA0;
+    }
+
+    inline void makeHighPass (Biquad& bq, float hz, float q) noexcept
+    {
+        const float w0 = 2.0f * juce::MathConstants<float>::pi * hz / (float) sr;
+        const float cw = std::cos (w0);
+        const float sw = std::sin (w0);
+        const float alpha = sw / (2.0f * q);
+
+        float b0 =  (1.0f + cw) * 0.5f;
+        float b1 = -(1.0f + cw);
+        float b2 =  (1.0f + cw) * 0.5f;
+        float a0 =   1.0f + alpha;
+        float a1 =  -2.0f * cw;
+        float a2 =   1.0f - alpha;
+
+        const float invA0 = 1.0f / a0;
+        bq.b0 = b0 * invA0;
+        bq.b1 = b1 * invA0;
+        bq.b2 = b2 * invA0;
+        bq.a1 = a1 * invA0;
+        bq.a2 = a2 * invA0;
+    }
+
+    inline void makePeakingEQ (Biquad& bq, float hz, float q, float gainDb) noexcept
+    {
+        const float A  = std::pow (10.0f, gainDb / 40.0f);
+        const float w0 = 2.0f * juce::MathConstants<float>::pi * hz / (float) sr;
+        const float cw = std::cos (w0);
+        const float sw = std::sin (w0);
+        const float alpha = sw / (2.0f * q);
+
+        float b0 = 1.0f + alpha * A;
+        float b1 = -2.0f * cw;
+        float b2 = 1.0f - alpha * A;
+        float a0 = 1.0f + alpha / A;
+        float a1 = -2.0f * cw;
+        float a2 = 1.0f - alpha / A;
+
+        const float invA0 = 1.0f / a0;
+        bq.b0 = b0 * invA0;
+        bq.b1 = b1 * invA0;
+        bq.b2 = b2 * invA0;
+        bq.a1 = a1 * invA0;
+        bq.a2 = a2 * invA0;
+    }
+
+    inline void makeLowShelf (Biquad& bq, float hz, float gainDb) noexcept
+    {
+        // RBJ shelf with slope S=1 (fixed topology; no extra params)
+        const float A  = dbToA (gainDb);
+        const float w0 = 2.0f * juce::MathConstants<float>::pi * hz / (float) sr;
+        const float cw = std::cos (w0);
+        const float sw = std::sin (w0);
+
+        const float S = 1.0f;
+        const float alpha = (sw / 2.0f) * std::sqrt ((A + 1.0f / A) * (1.0f / S - 1.0f) + 2.0f);
+        const float beta  = 2.0f * std::sqrt (A) * alpha;
+
+        float b0 =    A*((A+1.0f) - (A-1.0f)*cw + beta);
+        float b1 =  2.0f*A*((A-1.0f) - (A+1.0f)*cw);
+        float b2 =    A*((A+1.0f) - (A-1.0f)*cw - beta);
+        float a0 =        (A+1.0f) + (A-1.0f)*cw + beta;
+        float a1 =   -2.0f*((A-1.0f) + (A+1.0f)*cw);
+        float a2 =        (A+1.0f) + (A-1.0f)*cw - beta;
+
+        const float invA0 = 1.0f / a0;
+        bq.b0 = b0 * invA0;
+        bq.b1 = b1 * invA0;
+        bq.b2 = b2 * invA0;
+        bq.a1 = a1 * invA0;
+        bq.a2 = a2 * invA0;
+    }
+
+    inline void makeHighShelf (Biquad& bq, float hz, float gainDb) noexcept
+    {
+        // RBJ shelf with slope S=1 (fixed topology; no extra params)
+        const float A  = dbToA (gainDb);
+        const float w0 = 2.0f * juce::MathConstants<float>::pi * hz / (float) sr;
+        const float cw = std::cos (w0);
+        const float sw = std::sin (w0);
+
+        const float S = 1.0f;
+        const float alpha = (sw / 2.0f) * std::sqrt ((A + 1.0f / A) * (1.0f / S - 1.0f) + 2.0f);
+        const float beta  = 2.0f * std::sqrt (A) * alpha;
+
+        float b0 =    A*((A+1.0f) + (A-1.0f)*cw + beta);
+        float b1 = -2.0f*A*((A-1.0f) + (A+1.0f)*cw);
+        float b2 =    A*((A+1.0f) + (A-1.0f)*cw - beta);
+        float a0 =        (A+1.0f) - (A-1.0f)*cw + beta;
+        float a1 =    2.0f*((A-1.0f) - (A+1.0f)*cw);
+        float a2 =        (A+1.0f) - (A-1.0f)*cw - beta;
+
+        const float invA0 = 1.0f / a0;
+        bq.b0 = b0 * invA0;
+        bq.b1 = b1 * invA0;
+        bq.b2 = b2 * invA0;
+        bq.a1 = a1 * invA0;
+        bq.a2 = a2 * invA0;
+    }
+
+    // ---------- HPF 1st-order (pure math; already RT-safe) ----------
+    inline void updateFirstOrderHPF (float hpfHz) noexcept
+    {
+        const double fc = (double) sanitizeHz (hpfHz);
+        const double K  = std::tan (juce::MathConstants<double>::pi * fc / sr);
+
+        const double a0 = 1.0 / (1.0 + K);
+        hp1_b0 = (float) a0;
+        hp1_b1 = (float) (-a0);
+        hp1_a1 = (float) ((1.0 - K) / (1.0 + K));
+    }
+
+    inline float processFirstOrderHPF (int ch, float x) noexcept
+    {
+        const size_t i = (size_t) ch;
+
+        // y[n] = b0*x[n] + b1*x[n-1] + a1*y[n-1]
+        const float y = (hp1_b0 * x)
+                      + (hp1_b1 * hp1_x1[i])
+                      + (hp1_a1 * hp1_y1[i]);
+
+        hp1_x1[i] = x;
+        hp1_y1[i] = y;
+        return y;
     }
 
     inline void invalidateAllLastValues() noexcept
@@ -282,15 +400,34 @@ private:
         lastHfGainDb = 9999.0f;
     }
 
-    inline void updateFirstOrderHPF (float hpfHz) noexcept
+    inline void rebuildAllBiquads() noexcept
     {
-        const double fc = (double) juce::jlimit (HPF_MIN, HPF_MAX, hpfHz);
-        const double K  = std::tan (juce::MathConstants<double>::pi * fc / sr);
+        const float hpfHz = sanitizeHz (hpfHzSm.getCurrentValue());
+        const float lpfHz = sanitizeHz (lpfHzSm.getCurrentValue());
 
-        const double a0 = 1.0 / (1.0 + K);
-        hp1_b0 = (float) a0;
-        hp1_b1 = (float) (-a0);
-        hp1_a1 = (float) ((1.0 - K) / (1.0 + K));
+        const float lfF = sanitizeHz (lfFreqSm.getCurrentValue());
+        const float lfG = sanitizeDb (lfGainDbSm.getCurrentValue());
+
+        const float lmfF  = sanitizeHz (lmfFreqSm.getCurrentValue());
+        const float lmfG  = sanitizeDb (lmfGainDbSm.getCurrentValue());
+        const float lmfQv = sanitizeQ  (lmfQSm.getCurrentValue());
+
+        const float hmfF  = sanitizeHz (hmfFreqSm.getCurrentValue());
+        const float hmfG  = sanitizeDb (hmfGainDbSm.getCurrentValue());
+        const float hmfQv = sanitizeQ  (hmfQSm.getCurrentValue());
+
+        const float hfF = sanitizeHz (hfFreqSm.getCurrentValue());
+        const float hfG = sanitizeDb (hfGainDbSm.getCurrentValue());
+
+        for (int ch = 0; ch < channels; ++ch)
+        {
+            makeHighPass (hpf2[(size_t) ch], hpfHz, 0.70710678f);
+            makeLowShelf (lfShelf[(size_t) ch], lfF, lfG);
+            makePeakingEQ(lmfPeak[(size_t) ch], lmfF, lmfQv, lmfG);
+            makePeakingEQ(hmfPeak[(size_t) ch], hmfF, hmfQv, hmfG);
+            makeHighShelf(hfShelf[(size_t) ch], hfF, hfG);
+            makeLowPass  (lpf2[(size_t) ch], lpfHz, 0.70710678f);
+        }
     }
 
     inline void updateFiltersIfNeeded (int sampleIndex) noexcept
@@ -304,13 +441,13 @@ private:
         const float lfF = lfFreqSm.getCurrentValue();
         const float lfG = lfGainDbSm.getCurrentValue();
 
-        const float lmfF = lmfFreqSm.getCurrentValue();
-        const float lmfG = lmfGainDbSm.getCurrentValue();
-        const float lmfQv= lmfQSm.getCurrentValue();
+        const float lmfF  = lmfFreqSm.getCurrentValue();
+        const float lmfG  = lmfGainDbSm.getCurrentValue();
+        const float lmfQv = lmfQSm.getCurrentValue();
 
-        const float hmfF = hmfFreqSm.getCurrentValue();
-        const float hmfG = hmfGainDbSm.getCurrentValue();
-        const float hmfQv= hmfQSm.getCurrentValue();
+        const float hmfF  = hmfFreqSm.getCurrentValue();
+        const float hmfG  = hmfGainDbSm.getCurrentValue();
+        const float hmfQv = hmfQSm.getCurrentValue();
 
         const float hfF = hfFreqSm.getCurrentValue();
         const float hfG = hfGainDbSm.getCurrentValue();
@@ -326,71 +463,17 @@ private:
         if (! (hpfChanged || lpfChanged || lfChanged || lmfChanged || hmfChanged || hfChanged))
             return;
 
-        if (hpfChanged)
-        {
-            lastHpfHz = hpfNow;
-            updateFirstOrderHPF (hpfNow);
-        }
-        if (lpfChanged)
-        {
-            lastLpfHz = lpfNow;
-        }
+        // update last values
+        if (hpfChanged) { lastHpfHz = hpfNow; updateFirstOrderHPF (hpfNow); }
+        if (lpfChanged) { lastLpfHz = lpfNow; }
 
-        if (lfChanged)
-        {
-            lastLfFreq = lfF;
-            lastLfGainDb = lfG;
-        }
-        if (lmfChanged)
-        {
-            lastLmfFreq = lmfF;
-            lastLmfGainDb = lmfG;
-            lastLmfQ = lmfQv;
-        }
-        if (hmfChanged)
-        {
-            lastHmfFreq = hmfF;
-            lastHmfGainDb = hmfG;
-            lastHmfQ = hmfQv;
-        }
-        if (hfChanged)
-        {
-            lastHfFreq = hfF;
-            lastHfGainDb = hfG;
-        }
+        if (lfChanged)  { lastLfFreq = lfF;   lastLfGainDb = lfG; }
+        if (lmfChanged) { lastLmfFreq = lmfF; lastLmfGainDb = lmfG; lastLmfQ = lmfQv; }
+        if (hmfChanged) { lastHmfFreq = hmfF; lastHmfGainDb = hmfG; lastHmfQ = hmfQv; }
+        if (hfChanged)  { lastHfFreq = hfF;   lastHfGainDb = hfG; }
 
-        const auto hp = juce::IIRCoefficients::makeHighPass (sr, (double) hpfNow, (double) BUTTER_Q);
-        const auto lp = juce::IIRCoefficients::makeLowPass  (sr, (double) lpfNow, (double) BUTTER_Q);
-
-        const auto lf = juce::IIRCoefficients::makeLowShelf  (sr, (double) lfF, (double) SHELF_Q, dbToGain (lfG));
-        const auto hf = juce::IIRCoefficients::makeHighShelf (sr, (double) hfF, (double) SHELF_Q, dbToGain (hfG));
-
-        const auto lmf = juce::IIRCoefficients::makePeakFilter (sr, (double) lmfF, (double) lmfQv, dbToGain (lmfG));
-        const auto hmf = juce::IIRCoefficients::makePeakFilter (sr, (double) hmfF, (double) hmfQv, dbToGain (hmfG));
-
-        for (int ch = 0; ch < channels; ++ch)
-        {
-            hpf2[(size_t) ch]->setCoefficients (hp);
-            lfShelf[(size_t) ch]->setCoefficients (lf);
-            lmfPeak[(size_t) ch]->setCoefficients (lmf);
-            hmfPeak[(size_t) ch]->setCoefficients (hmf);
-            hfShelf[(size_t) ch]->setCoefficients (hf);
-            lpf2[(size_t) ch]->setCoefficients (lp);
-        }
-    }
-
-    inline float processFirstOrderHPF (int ch, float x) noexcept
-    {
-        const size_t i = (size_t) ch;
-
-        // y[n] = b0*x[n] + b1*x[n-1] + a1*y[n-1]
-        const float y = (hp1_b0 * x)
-                      + (hp1_b1 * hp1_x1[i])
-                      + (hp1_a1 * hp1_y1[i]);
-
-        hp1_x1[i] = x;
-        hp1_y1[i] = y;
-        return y;
+        // rebuild (pure math only)
+        rebuildAllBiquads();
     }
 
     double sr = 44100.0;
@@ -417,13 +500,13 @@ private:
     juce::SmoothedValue<float> hfFreqSm;
     juce::SmoothedValue<float> hfGainDbSm;
 
-    // per-channel filters
-    std::vector<std::unique_ptr<juce::IIRFilter>> hpf2;
-    std::vector<std::unique_ptr<juce::IIRFilter>> lfShelf;
-    std::vector<std::unique_ptr<juce::IIRFilter>> lmfPeak;
-    std::vector<std::unique_ptr<juce::IIRFilter>> hmfPeak;
-    std::vector<std::unique_ptr<juce::IIRFilter>> hfShelf;
-    std::vector<std::unique_ptr<juce::IIRFilter>> lpf2;
+    // per-channel biquads
+    std::vector<Biquad> hpf2;
+    std::vector<Biquad> lfShelf;
+    std::vector<Biquad> lmfPeak;
+    std::vector<Biquad> hmfPeak;
+    std::vector<Biquad> hfShelf;
+    std::vector<Biquad> lpf2;
 
     // 1st-order HPF coeffs/state
     float hp1_b0 = 1.0f;
