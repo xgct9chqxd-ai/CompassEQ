@@ -96,9 +96,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout CompassEQAudioProcessor::cre
     return layout;
 }
 
-void CompassEQAudioProcessor::prepareToPlay (double, int)
+void CompassEQAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    // Phase 1: no DSP init. Unity pass-through only.
+    dspCore.prepare (sampleRate, samplesPerBlock, getTotalNumInputChannels());
+
     inMeter01.store (0.0f, std::memory_order_relaxed);
     outMeter01.store (0.0f, std::memory_order_relaxed);
 }
@@ -121,10 +122,24 @@ void CompassEQAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear (ch, 0, buffer.getNumSamples());
 
-    // Phase 1 law: audio must remain unchanged (unity) in all cases.
     const auto* bypassParam = apvts.getRawParameterValue (GLOBAL_BYPASS_ID);
     const bool bypassed = (bypassParam != nullptr && bypassParam->load() >= 0.5f);
-    (void) bypassed;
+
+    if (! bypassed)
+    {
+        const auto* inTrimParam  = apvts.getRawParameterValue (INPUT_TRIM_ID);
+        const auto* outTrimParam = apvts.getRawParameterValue (OUTPUT_TRIM_ID);
+        const auto* hpfParam     = apvts.getRawParameterValue (HPF_FREQUENCY_ID);
+        const auto* lpfParam     = apvts.getRawParameterValue (LPF_FREQUENCY_ID);
+
+        dspCore.setTargets (
+            inTrimParam  ? inTrimParam->load()  : 0.0f,
+            outTrimParam ? outTrimParam->load() : 0.0f,
+            hpfParam     ? hpfParam->load()     : Ranges::HPF_DEF,
+            lpfParam     ? lpfParam->load()     : Ranges::LPF_DEF);
+
+        dspCore.process (buffer);
+    }
 
     float peak = 0.0f;
     for (int ch = 0; ch < getTotalNumInputChannels(); ++ch)

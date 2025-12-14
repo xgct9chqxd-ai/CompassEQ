@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "Core/DSPCore.h"
 
 class CompassEQAudioProcessor final : public juce::AudioProcessor
 {
@@ -46,6 +47,8 @@ private:
 
     std::atomic<float> inMeter01{0.0f};
     std::atomic<float> outMeter01{0.0f};
+    
+    compass::DSPCore dspCore;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
