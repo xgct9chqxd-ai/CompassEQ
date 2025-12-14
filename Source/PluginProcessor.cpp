@@ -131,12 +131,43 @@ void CompassEQAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         const auto* outTrimParam = apvts.getRawParameterValue (OUTPUT_TRIM_ID);
         const auto* hpfParam     = apvts.getRawParameterValue (HPF_FREQUENCY_ID);
         const auto* lpfParam     = apvts.getRawParameterValue (LPF_FREQUENCY_ID);
+        
+        // EQ band params (Phase 2B wiring)
+        const auto* lfFreqParam  = apvts.getRawParameterValue (LF_FREQUENCY_ID);
+        const auto* lfGainParam  = apvts.getRawParameterValue (LF_GAIN_ID);
+
+        const auto* lmfFreqParam = apvts.getRawParameterValue (LMF_FREQUENCY_ID);
+        const auto* lmfGainParam = apvts.getRawParameterValue (LMF_GAIN_ID);
+        const auto* lmfQParam    = apvts.getRawParameterValue (LMF_Q_ID);
+
+        const auto* hmfFreqParam = apvts.getRawParameterValue (HMF_FREQUENCY_ID);
+        const auto* hmfGainParam = apvts.getRawParameterValue (HMF_GAIN_ID);
+        const auto* hmfQParam    = apvts.getRawParameterValue (HMF_Q_ID);
+
+        const auto* hfFreqParam  = apvts.getRawParameterValue (HF_FREQUENCY_ID);
+        const auto* hfGainParam  = apvts.getRawParameterValue (HF_GAIN_ID);
 
         dspCore.setTargets (
             inTrimParam  ? inTrimParam->load()  : 0.0f,
             outTrimParam ? outTrimParam->load() : 0.0f,
             hpfParam     ? hpfParam->load()     : Ranges::HPF_DEF,
             lpfParam     ? lpfParam->load()     : Ranges::LPF_DEF);
+        
+        dspCore.setBandTargets (
+            lfFreqParam  ? lfFreqParam->load()  : Ranges::LF_FREQ_DEF,
+            lfGainParam  ? lfGainParam->load()  : Ranges::GAIN_DEF,
+
+            lmfFreqParam ? lmfFreqParam->load() : Ranges::LMF_FREQ_DEF,
+            lmfGainParam ? lmfGainParam->load() : Ranges::GAIN_DEF,
+            lmfQParam    ? lmfQParam->load()    : Ranges::Q_DEF,
+
+            hmfFreqParam ? hmfFreqParam->load() : Ranges::HMF_FREQ_DEF,
+            hmfGainParam ? hmfGainParam->load() : Ranges::GAIN_DEF,
+            hmfQParam    ? hmfQParam->load()    : Ranges::Q_DEF,
+
+            hfFreqParam  ? hfFreqParam->load()  : Ranges::HF_FREQ_DEF,
+            hfGainParam  ? hfGainParam->load()  : Ranges::GAIN_DEF
+        );
 
         dspCore.process (buffer);
     }
