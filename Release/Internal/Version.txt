@@ -1,0 +1,3 @@
+Compass EQ
+Version: 0.8.0-dev
+Channel: INTERNAL (not public)
