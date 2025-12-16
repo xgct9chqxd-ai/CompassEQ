@@ -86,6 +86,16 @@ CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor (CompassEQAudioProc
     // Global bypass button (no hidden interactions)
     globalBypass.setButtonText ("BYPASS");
     globalBypass.setClickingTogglesState (true);
+
+    globalBypass.onAltClick = [this]
+    {
+        proc.togglePureMode();
+
+       #if JUCE_DEBUG
+        DBG (juce::String ("[UI] Pure Mode = ") + (proc.getPureMode() ? "ON" : "OFF"));
+       #endif
+    };
+
     addAndMakeVisible (globalBypass);
 
     auto addKnob = [this] (juce::Slider& s) { addAndMakeVisible (s); };

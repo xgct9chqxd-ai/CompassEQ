@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <functional>
 #include "PluginProcessor.h"
 
 class CompassEQAudioProcessorEditor final : public juce::AudioProcessorEditor
@@ -85,7 +86,24 @@ private:
 
     juce::Slider inTrim, outTrim;
 
-    juce::ToggleButton globalBypass;
+    class AltClickToggle final : public juce::ToggleButton
+    {
+    public:
+        std::function<void()> onAltClick;
+
+        void mouseUp (const juce::MouseEvent& e) override
+        {
+            if (e.mods.isAltDown())
+            {
+                if (onAltClick) onAltClick();
+                return; // do NOT call base => bypass must NOT toggle
+            }
+
+            juce::ToggleButton::mouseUp (e);
+        }
+    };
+
+    AltClickToggle globalBypass;
 
     // ---------------- Attachments ----------------
     std::unique_ptr<SliderAttachment> attLfFreq, attLfGain;

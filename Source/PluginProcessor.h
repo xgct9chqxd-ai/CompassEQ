@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include <atomic>
 #include "Core/DSPCore.h"
 
 class CompassEQAudioProcessor final : public juce::AudioProcessor
@@ -42,11 +43,21 @@ public:
     float getInputMeter01() const noexcept  { return inMeter01.load(std::memory_order_relaxed); }
     float getOutputMeter01() const noexcept { return outMeter01.load(std::memory_order_relaxed); }
 
+    // ===== Hidden Pure Mode flag (not a parameter) =====
+    void setPureMode (bool enabled) noexcept { pureMode.store (enabled, std::memory_order_relaxed); }
+    bool getPureMode() const noexcept        { return pureMode.load (std::memory_order_relaxed); }
+    void togglePureMode() noexcept
+    {
+        setPureMode (! getPureMode());
+    }
+
 private:
     juce::AudioProcessorValueTreeState apvts;
 
     std::atomic<float> inMeter01{0.0f};
     std::atomic<float> outMeter01{0.0f};
+
+    std::atomic<bool> pureMode { false };
     
     compass::DSPCore dspCore;
 
