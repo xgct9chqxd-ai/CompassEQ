@@ -4,6 +4,46 @@
 static constexpr int kEditorW = 760;
 static constexpr int kEditorH = 420;
 
+// ===== Phase 5.0 helper (cpp-only) =====
+namespace
+{
+    struct PlateStyle
+    {
+        float fillA      = 0.05f;
+        float strokeA    = 0.12f;
+        float strokeW    = 1.0f;
+        float radius     = 6.0f;
+        int   insetPx    = 0;   // optional: shrink rect for visual breathing
+    };
+
+    static inline void drawPlate (juce::Graphics& g, juce::Rectangle<int> r, PlateStyle s)
+    {
+        if (r.isEmpty())
+            return;
+
+        if (s.insetPx > 0)
+            r = r.reduced (s.insetPx);
+
+        const auto rf = r.toFloat();
+
+        g.setColour (juce::Colours::white.withAlpha (s.fillA));
+        g.fillRoundedRectangle (rf, s.radius);
+
+        g.setColour (juce::Colours::white.withAlpha (s.strokeA));
+        g.drawRoundedRectangle (rf, s.radius, s.strokeW);
+    }
+
+    static inline juce::Rectangle<int> fullWidthFrom (juce::Rectangle<int> editor, juce::Rectangle<int> zone, int inset)
+    {
+        // “Derived from slots”: we take Y/H from the slot zone, and X/W from the editor bounds.
+        if (zone.isEmpty() || editor.isEmpty())
+            return {};
+
+        auto r = juce::Rectangle<int> (editor.getX() + inset, zone.getY(), editor.getWidth() - (inset * 2), zone.getHeight());
+        return r.getIntersection (editor);
+    }
+}
+
 CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor (CompassEQAudioProcessor& p)
     : juce::AudioProcessorEditor (&p)
     , proc (p)
@@ -97,26 +137,81 @@ void CompassEQAudioProcessorEditor::configureKnob (juce::Slider& s)
 
 void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    // ----- Background -----
+    // ===== Phase 5.0 — Asset-Ready Paint Layer (vector-only, no images) =====
+    // Only paint changes. Layout is frozen. All drawing driven by assetSlots.
+
+    const auto editor = getLocalBounds();
     g.fillAll (juce::Colours::black);
 
-    // subtle weighting
-    g.setColour (juce::Colours::white.withAlpha (0.03f));
-    g.fillRect (getLocalBounds().removeFromTop (90));
+    // ---- Global border (subtle) ----
+    g.setColour (juce::Colours::white.withAlpha (0.12f));
+    g.drawRect (editor, 1);
 
-    g.setColour (juce::Colours::white.withAlpha (0.02f));
-    g.fillRect (getLocalBounds().removeFromBottom (70));
+    // ---- Plate styles (alpha ladder) ----
+    // Keep everything subtle—this is a future PNG drop-in map.
+    PlateStyle bgPlate     { 0.015f, 0.07f, 1.0f, 10.0f, 0 };
+    PlateStyle headerPlate { 0.030f, 0.10f, 1.0f, 10.0f, 0 };
+    PlateStyle zonePlate   { 0.022f, 0.10f, 1.0f,  8.0f, 0 };
+    PlateStyle subPlate    { 0.018f, 0.10f, 1.0f,  6.0f, 0 };
+    PlateStyle wellPlate   { 0.060f, 0.16f, 1.0f,  4.0f, 0 };
 
-    // border
-    g.setColour (juce::Colours::white.withAlpha (0.10f));
-    g.drawRect (getLocalBounds(), 1);
+    // ---- Major plates (derived from assetSlots zones) ----
+    drawPlate (g, editor.reduced (8), bgPlate);
 
-    // ----- Fonts -----
+    const int inset = 16; // paint-only breathing room (not layout)
+    auto headerFW = fullWidthFrom (assetSlots.editor, assetSlots.headerZone, inset);
+    auto filters  = fullWidthFrom (assetSlots.editor, assetSlots.filtersZone, inset);
+    auto bands    = fullWidthFrom (assetSlots.editor, assetSlots.bandsZone, inset);
+    auto trims    = fullWidthFrom (assetSlots.editor, assetSlots.trimZone, inset);
+
+    drawPlate (g, headerFW, headerPlate);
+    drawPlate (g, filters,  zonePlate);
+    drawPlate (g, bands,    zonePlate);
+    drawPlate (g, trims,    zonePlate);
+
+    // ---- Sub-plates: meters, bypass, filter wells, column plates ----
+    // Meter wells (use actual meter bounds expanded slightly)
+    drawPlate (g, assetSlots.inputMeter.expanded (4, 4).getIntersection (editor),  wellPlate);
+    drawPlate (g, assetSlots.outputMeter.expanded (4, 4).getIntersection (editor), wellPlate);
+
+    // Bypass plate
+    drawPlate (g, assetSlots.bypass.expanded (10, 8).getIntersection (editor), subPlate);
+
+    // Filter wells
+    drawPlate (g, assetSlots.hpfKnob.expanded (10, 10).getIntersection (editor), subPlate);
+    drawPlate (g, assetSlots.lpfKnob.expanded (10, 10).getIntersection (editor), subPlate);
+
+    // Column plates (union rects already computed in Phase 4.0)
+    drawPlate (g, assetSlots.colLF.expanded (14, 14).getIntersection (editor),  subPlate);
+    drawPlate (g, assetSlots.colLMF.expanded (14, 14).getIntersection (editor), subPlate);
+    drawPlate (g, assetSlots.colHMF.expanded (14, 14).getIntersection (editor), subPlate);
+    drawPlate (g, assetSlots.colHF.expanded (14, 14).getIntersection (editor),  subPlate);
+
+    // ---- Optional micro separators aligned to plate edges (no new UI elements) ----
+    {
+        g.setColour (juce::Colours::white.withAlpha (0.06f));
+
+        // vertical edges of the bands plate (helps future asset snapping)
+        if (! bands.isEmpty())
+        {
+            g.drawLine ((float) bands.getX(),         (float) bands.getY(),    (float) bands.getX(),         (float) bands.getBottom(), 1.0f);
+            g.drawLine ((float) bands.getRight() - 1, (float) bands.getY(),    (float) bands.getRight() - 1, (float) bands.getBottom(), 1.0f);
+        }
+
+        // horizontal separators between major zones
+        if (! filters.isEmpty())
+            g.drawLine ((float) filters.getX(), (float) filters.getBottom(), (float) filters.getRight(), (float) filters.getBottom(), 1.0f);
+
+        if (! bands.isEmpty())
+            g.drawLine ((float) bands.getX(), (float) bands.getBottom(), (float) bands.getRight(), (float) bands.getBottom(), 1.0f);
+    }
+
+    // ---- Keep your existing Phase 3.3 text system (headers/legends/ticks) ----
+    // Fonts
     const auto titleFont  = juce::FontOptions (18.0f, juce::Font::bold);
     const auto headerFont = juce::FontOptions (11.0f, juce::Font::bold);
     const auto microFont  = juce::FontOptions (9.0f);
 
-    // ----- Helpers -----
     auto drawHeaderAbove = [&g, &headerFont] (const char* txt, juce::Rectangle<int> b, int yOffset)
     {
         g.setColour (juce::Colours::white.withAlpha (0.70f));
@@ -126,7 +221,7 @@ void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
 
     auto drawLegendBelow = [&g, &microFont] (const char* txt, juce::Rectangle<int> b, int yOffset)
     {
-        g.setColour (juce::Colours::white.withAlpha (0.40f));
+        g.setColour (juce::Colours::white.withAlpha (0.42f));
         g.setFont (microFont);
         g.drawFittedText (txt, b.getX(), b.getBottom() + yOffset, b.getWidth(), 12, juce::Justification::centred, 1);
     };
@@ -136,7 +231,7 @@ void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
         const int cx = b.getCentreX();
         const int y0 = b.getY() + yOffset;
         const int y1 = y0 + 6;
-        g.setColour (juce::Colours::white.withAlpha (0.32f));
+        g.setColour (juce::Colours::white.withAlpha (0.26f));
         g.drawLine ((float) cx, (float) y0, (float) cx, (float) y1, 1.0f);
     };
 
@@ -147,43 +242,35 @@ void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
         g.drawFittedText (txt, columnBounds.getX(), y, columnBounds.getWidth(), 14, juce::Justification::centred, 1);
     };
 
-    // ----- Title -----
+    // Title (centered inside header plate)
     g.setColour (juce::Colours::white.withAlpha (0.88f));
     g.setFont (titleFont);
-    g.drawText ("COMPASS EQ", 16, 10, 260, 24, juce::Justification::left);
+    if (! headerFW.isEmpty())
+        g.drawText ("COMPASS EQ", headerFW.withTrimmedTop (6).withHeight (24), juce::Justification::centred, false);
 
-    // ===== Phase 3.0 Add: column labels for stacks (paint-only) =====
-    // Use existing knob bounds to define each column (no layout changes).
-    const auto lfCol  = lfFreq.getBounds().getUnion (lfGain.getBounds());
-    const auto lmfCol = lmfFreq.getBounds().getUnion (lmfQ.getBounds());
-    const auto hmfCol = hmfFreq.getBounds().getUnion (hmfQ.getBounds());
-    const auto hfCol  = hfFreq.getBounds().getUnion (hfGain.getBounds());
-
-    // Place band labels slightly above the top knob row
-    const int topY = juce::jmin (lfCol.getY(),
-                                lmfCol.getY(),
-                                hmfCol.getY(),
-                                hfCol.getY());
+    // Column labels (driven by slot unions)
+    const int topY = juce::jmin (assetSlots.colLF.getY(),
+                                assetSlots.colLMF.getY(),
+                                assetSlots.colHMF.getY(),
+                                assetSlots.colHF.getY());
     const int bandLabelY = topY - 18;
 
-    drawColLabel ("LF",  lfCol,  bandLabelY);
-    drawColLabel ("LMF", lmfCol, bandLabelY);
-    drawColLabel ("HMF", hmfCol, bandLabelY);
-    drawColLabel ("HF",  hfCol,  bandLabelY);
+    drawColLabel ("LF",  assetSlots.colLF,  bandLabelY);
+    drawColLabel ("LMF", assetSlots.colLMF, bandLabelY);
+    drawColLabel ("HMF", assetSlots.colHMF, bandLabelY);
+    drawColLabel ("HF",  assetSlots.colHF,  bandLabelY);
 
-    // Filter header centered above each filter knob
-    drawHeaderAbove ("HPF", hpfFreq.getBounds(), -14);
-    drawHeaderAbove ("LPF", lpfFreq.getBounds(), -14);
+    // Headers
+    drawHeaderAbove ("HPF", hpfFreq.getBounds(), -16);
+    drawHeaderAbove ("LPF", lpfFreq.getBounds(), -16);
 
-    // Meter headers
-    drawHeaderAbove ("IN",  inputMeter.getBounds(),  -14);
-    drawHeaderAbove ("OUT", outputMeter.getBounds(), -14);
+    drawHeaderAbove ("IN",  inputMeter.getBounds(),  -16);
+    drawHeaderAbove ("OUT", outputMeter.getBounds(), -16);
 
-    // Trim headers
-    drawHeaderAbove ("IN",  inTrim.getBounds(),  -14);
-    drawHeaderAbove ("OUT", outTrim.getBounds(), -14);
+    drawHeaderAbove ("IN",  inTrim.getBounds(),  -16);
+    drawHeaderAbove ("OUT", outTrim.getBounds(), -16);
 
-    // ----- Micro legends under each knob -----
+    // Legends
     drawLegendBelow ("FREQ", lfFreq.getBounds(),  2);
     drawLegendBelow ("GAIN", lfGain.getBounds(),  2);
 
@@ -204,7 +291,7 @@ void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
     drawLegendBelow ("TRIM", inTrim.getBounds(),  2);
     drawLegendBelow ("TRIM", outTrim.getBounds(), 2);
 
-    // ----- Ticks above knobs -----
+    // Ticks
     drawTick (lfFreq.getBounds(),  -2);  drawTick (lfGain.getBounds(), -2);
     drawTick (lmfFreq.getBounds(), -2);  drawTick (lmfGain.getBounds(), -2); drawTick (lmfQ.getBounds(), -2);
     drawTick (hmfFreq.getBounds(), -2);  drawTick (hmfGain.getBounds(), -2); drawTick (hmfQ.getBounds(), -2);
@@ -216,7 +303,7 @@ void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
     drawTick (inTrim.getBounds(),  -2);
     drawTick (outTrim.getBounds(), -2);
 
-    // ===== Phase 4.0 debug (OFF by default) =====
+    // Keep your Phase 4 debug overlay (still OFF by default)
     if constexpr (kAssetSlotDebug == 1)
     {
         auto draw = [&g] (juce::Rectangle<int> r)
@@ -290,7 +377,7 @@ void CompassEQAudioProcessorEditor::resized()
     const int filtersStartX = marginL + ((usableW - filtersTotalW) / 2); // 316
     const int filtersY = z2Y + ((z2H - filterKnob) / 2);                // 76
 
-    hpfFreq.setBounds (filtersStartX,                   filtersY, filterKnob, filterKnob);
+    hpfFreq.setBounds (filtersStartX,                        filtersY, filterKnob, filterKnob);
     lpfFreq.setBounds (filtersStartX + filterKnob + filterSpacing, filtersY, filterKnob, filterKnob);
 
     // ----- Zone 3: EQ Bands -----
