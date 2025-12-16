@@ -5,6 +5,9 @@ static constexpr int kEditorW = 760;
 static constexpr int kEditorH = 420;
 
 // ===== Phase 5.0 helper (cpp-only) =====
+// ===== Phase 6.0 audit overlay (OFF by default) =====
+static constexpr int kPaintAuditOverlay = 0;
+
 namespace
 {
     struct PlateStyle
@@ -321,6 +324,44 @@ void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
         draw (assetSlots.colLMF);
         draw (assetSlots.colHMF);
         draw (assetSlots.colHF);
+    }
+
+    // ===== Phase 6.0 paint-audit overlay (OFF by default) =====
+    if constexpr (kPaintAuditOverlay == 1)
+    {
+        auto box = [&g] (juce::Rectangle<int> r, float a)
+        {
+            if (r.isEmpty()) return;
+            g.setColour (juce::Colours::white.withAlpha (a));
+            g.drawRect (r, 1);
+        };
+
+        // Asset slots
+        box (assetSlots.headerZone, 0.20f);
+        box (assetSlots.filtersZone, 0.20f);
+        box (assetSlots.bandsZone, 0.20f);
+        box (assetSlots.trimZone,   0.20f);
+
+        box (assetSlots.colLF,  0.20f);
+        box (assetSlots.colLMF, 0.20f);
+        box (assetSlots.colHMF, 0.20f);
+        box (assetSlots.colHF,  0.20f);
+
+        // Knob bounds (exact control bounds)
+        box (lfFreq.getBounds(),  0.14f); box (lfGain.getBounds(),  0.14f);
+        box (lmfFreq.getBounds(), 0.14f); box (lmfGain.getBounds(), 0.14f); box (lmfQ.getBounds(), 0.14f);
+        box (hmfFreq.getBounds(), 0.14f); box (hmfGain.getBounds(), 0.14f); box (hmfQ.getBounds(), 0.14f);
+        box (hfFreq.getBounds(),  0.14f); box (hfGain.getBounds(),  0.14f);
+
+        box (hpfFreq.getBounds(), 0.14f);
+        box (lpfFreq.getBounds(), 0.14f);
+
+        box (inTrim.getBounds(),  0.14f);
+        box (outTrim.getBounds(), 0.14f);
+
+        // Meters
+        box (inputMeter.getBounds(),  0.18f);
+        box (outputMeter.getBounds(), 0.18f);
     }
 }
 
