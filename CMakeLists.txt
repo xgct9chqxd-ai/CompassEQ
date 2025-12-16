@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(CompassEQ VERSION 0.1.0)
+project(CompassEQ VERSION 0.8.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -9,6 +9,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_subdirectory(${JUCE_DIR} JUCE)
 
 juce_add_plugin(CompassEQ
+    VERSION 0.8.0
+    PLUGIN_VERSION "0.8.0-dev"
     COMPANY_NAME "Compass"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
