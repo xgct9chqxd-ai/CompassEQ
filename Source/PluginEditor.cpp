@@ -215,6 +215,26 @@ void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
 
     drawTick (inTrim.getBounds(),  -2);
     drawTick (outTrim.getBounds(), -2);
+
+    // ===== Phase 4.0 debug (OFF by default) =====
+    if constexpr (kAssetSlotDebug == 1)
+    {
+        auto draw = [&g] (juce::Rectangle<int> r)
+        {
+            g.setColour (juce::Colours::white.withAlpha (0.20f));
+            g.drawRect (r, 1);
+        };
+
+        draw (assetSlots.headerZone);
+        draw (assetSlots.filtersZone);
+        draw (assetSlots.bandsZone);
+        draw (assetSlots.trimZone);
+
+        draw (assetSlots.colLF);
+        draw (assetSlots.colLMF);
+        draw (assetSlots.colHMF);
+        draw (assetSlots.colHF);
+    }
 }
 
 void CompassEQAudioProcessorEditor::resized()
@@ -352,4 +372,65 @@ void CompassEQAudioProcessorEditor::resized()
     inTrim.setBounds  (inTrimX,  trimY, kPrimary, kPrimary);
     outTrim.setBounds (outTrimX, trimY, kPrimary, kPrimary);
     globalBypass.setBounds (bypassX, bypassY, bypassW, bypassH);
+
+    // ===== Phase 4.0 — Asset Slot Map (derived from existing bounds) =====
+    {
+        constexpr int g = 8;
+
+        assetSlots = {}; // reset
+
+        assetSlots.editor = getLocalBounds();
+
+        // Exact component bounds
+        assetSlots.inputMeter  = inputMeter.getBounds();
+        assetSlots.outputMeter = outputMeter.getBounds();
+
+        assetSlots.hpfKnob = hpfFreq.getBounds();
+        assetSlots.lpfKnob = lpfFreq.getBounds();
+
+        assetSlots.lfFreq = lfFreq.getBounds();   assetSlots.lfGain = lfGain.getBounds();
+
+        assetSlots.lmfFreq = lmfFreq.getBounds(); assetSlots.lmfGain = lmfGain.getBounds(); assetSlots.lmfQ = lmfQ.getBounds();
+        assetSlots.hmfFreq = hmfFreq.getBounds(); assetSlots.hmfGain = hmfGain.getBounds(); assetSlots.hmfQ = hmfQ.getBounds();
+
+        assetSlots.hfFreq = hfFreq.getBounds();   assetSlots.hfGain = hfGain.getBounds();
+
+        assetSlots.inTrim  = inTrim.getBounds();
+        assetSlots.outTrim = outTrim.getBounds();
+        assetSlots.bypass  = globalBypass.getBounds();
+
+        // Unions (derived only)
+        assetSlots.filtersUnion = assetSlots.hpfKnob.getUnion (assetSlots.lpfKnob);
+
+        assetSlots.bandsUnion =
+            assetSlots.lfFreq.getUnion (assetSlots.lfGain)
+                .getUnion (assetSlots.lmfFreq).getUnion (assetSlots.lmfGain).getUnion (assetSlots.lmfQ)
+                .getUnion (assetSlots.hmfFreq).getUnion (assetSlots.hmfGain).getUnion (assetSlots.hmfQ)
+                .getUnion (assetSlots.hfFreq).getUnion (assetSlots.hfGain);
+
+        assetSlots.trimsUnion = assetSlots.inTrim.getUnion (assetSlots.outTrim).getUnion (assetSlots.bypass);
+
+        // Column unions (useful for later panel assets)
+        assetSlots.colLF  = assetSlots.lfFreq.getUnion (assetSlots.lfGain);
+        assetSlots.colLMF = assetSlots.lmfFreq.getUnion (assetSlots.lmfGain).getUnion (assetSlots.lmfQ);
+        assetSlots.colHMF = assetSlots.hmfFreq.getUnion (assetSlots.hmfGain).getUnion (assetSlots.hmfQ);
+        assetSlots.colHF  = assetSlots.hfFreq.getUnion (assetSlots.hfGain);
+
+        // Major zones (derived from component bounds, expanded by grid)
+        assetSlots.headerZone  = assetSlots.inputMeter.getUnion (assetSlots.outputMeter).expanded (g, g);
+        assetSlots.filtersZone = assetSlots.filtersUnion.expanded (g * 2, g * 2);
+        assetSlots.bandsZone   = assetSlots.bandsUnion.expanded (g * 2, g * 2);
+        assetSlots.trimZone    = assetSlots.trimsUnion.expanded (g * 2, g * 2);
+
+        // Clamp to editor
+        auto clamp = [&] (juce::Rectangle<int>& r)
+        {
+            r = r.getIntersection (assetSlots.editor);
+        };
+
+        clamp (assetSlots.headerZone);
+        clamp (assetSlots.filtersZone);
+        clamp (assetSlots.bandsZone);
+        clamp (assetSlots.trimZone);
+    }
 }

@@ -99,6 +99,51 @@ private:
 
     std::unique_ptr<ButtonAttachment> attBypass;
 
+    // ---------------- Asset Slots (Phase 4.0) ----------------
+    struct AssetSlots
+    {
+        juce::Rectangle<int> editor;
+
+        // Major regions (derived from existing component bounds)
+        juce::Rectangle<int> headerZone;
+        juce::Rectangle<int> filtersZone;
+        juce::Rectangle<int> bandsZone;
+        juce::Rectangle<int> trimZone;
+
+        // Components (exact bounds)
+        juce::Rectangle<int> inputMeter;
+        juce::Rectangle<int> outputMeter;
+
+        juce::Rectangle<int> hpfKnob;
+        juce::Rectangle<int> lpfKnob;
+
+        juce::Rectangle<int> lfFreq, lfGain;
+        juce::Rectangle<int> lmfFreq, lmfGain, lmfQ;
+        juce::Rectangle<int> hmfFreq, hmfGain, hmfQ;
+        juce::Rectangle<int> hfFreq, hfGain;
+
+        juce::Rectangle<int> inTrim;
+        juce::Rectangle<int> outTrim;
+        juce::Rectangle<int> bypass;
+
+        // Column unions (useful for later “panel” assets)
+        juce::Rectangle<int> colLF;
+        juce::Rectangle<int> colLMF;
+        juce::Rectangle<int> colHMF;
+        juce::Rectangle<int> colHF;
+
+        // Whole control unions
+        juce::Rectangle<int> filtersUnion;
+        juce::Rectangle<int> bandsUnion;
+        juce::Rectangle<int> trimsUnion;
+    };
+
+    AssetSlots assetSlots;
+
+    // Debug overlay (OFF by default)
+    // Set to 1 manually if you want temporary outlines during asset integration.
+    static constexpr int kAssetSlotDebug = 0;
+
     // ---------------- Meters ----------------
     MeterComponent inputMeter;
     MeterComponent outputMeter;
