@@ -35,23 +35,75 @@ private:
 
         void paint (juce::Graphics& g) override
         {
-            const auto bounds = getLocalBounds().toFloat();
+            const auto b = getLocalBounds();
 
-            // background well
-            g.setColour (juce::Colours::white.withAlpha (0.10f));
-            g.fillRoundedRectangle (bounds, 2.0f);
+            // Hard occlude anything behind the meter lane
+            g.setColour (juce::Colours::black);
+            g.fillRect (b);
 
-            // fill
-            const float v = juce::jlimit (0.0f, 1.0f, last01);
-            auto fill = bounds;
-            fill.removeFromTop (fill.getHeight() * (1.0f - v));
+            const auto bounds = b.toFloat().reduced (1.0f);
 
-            g.setColour (juce::Colours::white.withAlpha (0.85f));
-            g.fillRoundedRectangle (fill, 2.0f);
+            // LED ladder config (SSL-ish)
+            constexpr int kDots   = 23;
+            constexpr int kGreen  = 16;
+            constexpr int kYellow = 5;
+            constexpr int kRed    = 2;
 
-            // border
-            g.setColour (juce::Colours::white.withAlpha (0.22f));
-            g.drawRoundedRectangle (bounds, 2.0f, 1.0f);
+            const float v01 = juce::jlimit (0.0f, 1.0f, last01);
+            const int litDots = juce::jlimit (0, kDots, (int) std::lround (v01 * (float) kDots));
+
+            const float w = bounds.getWidth();
+            const float h = bounds.getHeight();
+
+            // We FORCE full-height coverage.
+            constexpr float minGap = 1.0f;
+
+            // Start with a diameter that fits width, then clamp by height constraint.
+            float dotD = juce::jlimit (2.5f, 7.0f, w - 4.0f);
+
+            // If height can't accommodate with minGap, shrink dotD until it can.
+            const float maxDotDByHeight = (h - minGap * (float) (kDots - 1)) / (float) kDots;
+            dotD = juce::jmin (dotD, maxDotDByHeight);
+
+            // Now compute the exact gap that makes the ladder span the full height.
+            float gap = (h - dotD * (float) kDots) / (float) (kDots - 1);
+            gap = juce::jmax (minGap, gap);
+
+            // Recompute dotD once more in case we clamped gap up.
+            dotD = (h - gap * (float) (kDots - 1)) / (float) kDots;
+
+            const float x = bounds.getX() + (w - dotD) * 0.5f;
+
+            // Anchor bottom dot to bottom edge
+            const float yBottom = bounds.getBottom() - dotD;
+
+            // “On” colors (lit)
+            const auto greenOn  = juce::Colour::fromRGB (60, 200, 110).withAlpha (0.90f);
+            const auto yellowOn = juce::Colour::fromRGB (230, 200, 70).withAlpha (0.90f);
+            const auto redOn    = juce::Colour::fromRGB (230, 70, 70).withAlpha (0.95f);
+
+            // “Off” colors (dim but still color-coded)
+            const auto greenOff  = juce::Colour::fromRGB (60, 200, 110).withAlpha (0.14f);
+            const auto yellowOff = juce::Colour::fromRGB (230, 200, 70).withAlpha (0.14f);
+            const auto redOff    = juce::Colour::fromRGB (230, 70, 70).withAlpha (0.16f);
+
+            for (int i = 0; i < kDots; ++i)
+            {
+                const bool on = (i < litDots);
+
+                juce::Colour c;
+                if (i < kGreen)              c = on ? greenOn  : greenOff;
+                else if (i < kGreen+kYellow) c = on ? yellowOn : yellowOff;
+                else                         c = on ? redOn    : redOff;
+
+                const float y = yBottom - (float) i * (dotD + gap);
+
+                g.setColour (c);
+                g.fillRoundedRectangle (juce::Rectangle<float> (x, y, dotD, dotD), dotD * 0.30f);
+            }
+
+            // Border decision: OFF for now (dots only)
+            // If we want it later, we'll add it back after we judge the look.
         }
 
     private:
@@ -85,6 +137,10 @@ private:
     juce::Slider hpfFreq, lpfFreq;
 
     juce::Slider inTrim, outTrim;
+
+    // ---------------- Floating Value Popup (Phase X) ----------------
+    juce::Label valuePopup;
+    juce::Slider* activeSlider = nullptr;
 
     class AltClickToggle final : public juce::ToggleButton
     {

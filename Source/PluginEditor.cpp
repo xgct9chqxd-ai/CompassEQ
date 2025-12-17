@@ -28,12 +28,6 @@ namespace
             r = r.reduced (s.insetPx);
 
         const auto rf = r.toFloat();
-
-        g.setColour (juce::Colours::white.withAlpha (s.fillA));
-        g.fillRoundedRectangle (rf, s.radius);
-
-        g.setColour (juce::Colours::white.withAlpha (s.strokeA));
-        g.drawRoundedRectangle (rf, s.radius, s.strokeW);
     }
 
     static inline juce::Rectangle<int> fullWidthFrom (juce::Rectangle<int> editor, juce::Rectangle<int> zone, int inset)
@@ -45,6 +39,13 @@ namespace
         auto r = juce::Rectangle<int> (editor.getX() + inset, zone.getY(), editor.getWidth() - (inset * 2), zone.getHeight());
         return r.getIntersection (editor);
     }
+}
+
+// ===== Value popup helper (cpp-only) =====
+static inline juce::String popupTextFor (juce::Slider& s)
+{
+    // Uses JUCE's value→text conversion (suffix/decimals) if you set it.
+    return s.getTextFromValue (s.getValue());
 }
 
 CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor (CompassEQAudioProcessor& p)
@@ -81,6 +82,344 @@ CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor (CompassEQAudioProc
     inTrim.setName ("Input Trim");
     outTrim.setName ("Output Trim");
 
+    // ===== Value popup wiring (per-slider) =====
+    lfFreq.onDragStart = [this]
+    {
+        activeSlider = &lfFreq;
+        valuePopup.setVisible (true);
+    };
+
+    lfFreq.onValueChange = [this]
+    {
+        activeSlider = &lfFreq;
+        valuePopup.setVisible (true);
+
+        valuePopup.setText (popupTextFor (lfFreq), juce::dontSendNotification);
+
+        auto r = lfFreq.getBounds();
+        const int y = juce::jmax (0, r.getY() - 22);
+        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
+    };
+
+    lfFreq.onDragEnd = [this]
+    {
+        valuePopup.setVisible (false);
+        activeSlider = nullptr;
+    };
+
+    lfGain.onDragStart = [this]
+    {
+        activeSlider = &lfGain;
+        valuePopup.setVisible (true);
+    };
+
+    lfGain.onValueChange = [this]
+    {
+        activeSlider = &lfGain;
+        valuePopup.setVisible (true);
+
+        valuePopup.setText (popupTextFor (lfGain), juce::dontSendNotification);
+
+        auto r = lfGain.getBounds();
+        const int y = juce::jmax (0, r.getY() - 22);
+        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
+    };
+
+    lfGain.onDragEnd = [this]
+    {
+        valuePopup.setVisible (false);
+        activeSlider = nullptr;
+    };
+
+    lmfFreq.onDragStart = [this]
+    {
+        activeSlider = &lmfFreq;
+        valuePopup.setVisible (true);
+    };
+
+    lmfFreq.onValueChange = [this]
+    {
+        activeSlider = &lmfFreq;
+        valuePopup.setVisible (true);
+
+        valuePopup.setText (popupTextFor (lmfFreq), juce::dontSendNotification);
+
+        auto r = lmfFreq.getBounds();
+        const int y = juce::jmax (0, r.getY() - 22);
+        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
+    };
+
+    lmfFreq.onDragEnd = [this]
+    {
+        valuePopup.setVisible (false);
+        activeSlider = nullptr;
+    };
+
+    lmfGain.onDragStart = [this]
+    {
+        activeSlider = &lmfGain;
+        valuePopup.setVisible (true);
+    };
+
+    lmfGain.onValueChange = [this]
+    {
+        activeSlider = &lmfGain;
+        valuePopup.setVisible (true);
+
+        valuePopup.setText (popupTextFor (lmfGain), juce::dontSendNotification);
+
+        auto r = lmfGain.getBounds();
+        const int y = juce::jmax (0, r.getY() - 22);
+        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
+    };
+
+    lmfGain.onDragEnd = [this]
+    {
+        valuePopup.setVisible (false);
+        activeSlider = nullptr;
+    };
+
+    lmfQ.onDragStart = [this]
+    {
+        activeSlider = &lmfQ;
+        valuePopup.setVisible (true);
+    };
+
+    lmfQ.onValueChange = [this]
+    {
+        activeSlider = &lmfQ;
+        valuePopup.setVisible (true);
+
+        valuePopup.setText (popupTextFor (lmfQ), juce::dontSendNotification);
+
+        auto r = lmfQ.getBounds();
+        const int y = juce::jmax (0, r.getY() - 22);
+        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
+    };
+
+    lmfQ.onDragEnd = [this]
+    {
+        valuePopup.setVisible (false);
+        activeSlider = nullptr;
+    };
+
+    hmfFreq.onDragStart = [this]
+    {
+        activeSlider = &hmfFreq;
+        valuePopup.setVisible (true);
+    };
+
+    hmfFreq.onValueChange = [this]
+    {
+        activeSlider = &hmfFreq;
+        valuePopup.setVisible (true);
+
+        valuePopup.setText (popupTextFor (hmfFreq), juce::dontSendNotification);
+
+        auto r = hmfFreq.getBounds();
+        const int y = juce::jmax (0, r.getY() - 22);
+        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
+    };
+
+    hmfFreq.onDragEnd = [this]
+    {
+        valuePopup.setVisible (false);
+        activeSlider = nullptr;
+    };
+
+    hmfGain.onDragStart = [this]
+    {
+        activeSlider = &hmfGain;
+        valuePopup.setVisible (true);
+    };
+
+    hmfGain.onValueChange = [this]
+    {
+        activeSlider = &hmfGain;
+        valuePopup.setVisible (true);
+
+        valuePopup.setText (popupTextFor (hmfGain), juce::dontSendNotification);
+
+        auto r = hmfGain.getBounds();
+        const int y = juce::jmax (0, r.getY() - 22);
+        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
+    };
+
+    hmfGain.onDragEnd = [this]
+    {
+        valuePopup.setVisible (false);
+        activeSlider = nullptr;
+    };
+
+    hmfQ.onDragStart = [this]
+    {
+        activeSlider = &hmfQ;
+        valuePopup.setVisible (true);
+    };
+
+    hmfQ.onValueChange = [this]
+    {
+        activeSlider = &hmfQ;
+        valuePopup.setVisible (true);
+
+        valuePopup.setText (popupTextFor (hmfQ), juce::dontSendNotification);
+
+        auto r = hmfQ.getBounds();
+        const int y = juce::jmax (0, r.getY() - 22);
+        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
+    };
+
+    hmfQ.onDragEnd = [this]
+    {
+        valuePopup.setVisible (false);
+        activeSlider = nullptr;
+    };
+
+    hfFreq.onDragStart = [this]
+    {
+        activeSlider = &hfFreq;
+        valuePopup.setVisible (true);
+    };
+
+    hfFreq.onValueChange = [this]
+    {
+        activeSlider = &hfFreq;
+        valuePopup.setVisible (true);
+
+        valuePopup.setText (popupTextFor (hfFreq), juce::dontSendNotification);
+
+        auto r = hfFreq.getBounds();
+        const int y = juce::jmax (0, r.getY() - 22);
+        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
+    };
+
+    hfFreq.onDragEnd = [this]
+    {
+        valuePopup.setVisible (false);
+        activeSlider = nullptr;
+    };
+
+    hfGain.onDragStart = [this]
+    {
+        activeSlider = &hfGain;
+        valuePopup.setVisible (true);
+    };
+
+    hfGain.onValueChange = [this]
+    {
+        activeSlider = &hfGain;
+        valuePopup.setVisible (true);
+
+        valuePopup.setText (popupTextFor (hfGain), juce::dontSendNotification);
+
+        auto r = hfGain.getBounds();
+        const int y = juce::jmax (0, r.getY() - 22);
+        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
+    };
+
+    hfGain.onDragEnd = [this]
+    {
+        valuePopup.setVisible (false);
+        activeSlider = nullptr;
+    };
+
+    hpfFreq.onDragStart = [this]
+    {
+        activeSlider = &hpfFreq;
+        valuePopup.setVisible (true);
+    };
+
+    hpfFreq.onValueChange = [this]
+    {
+        activeSlider = &hpfFreq;
+        valuePopup.setVisible (true);
+
+        valuePopup.setText (popupTextFor (hpfFreq), juce::dontSendNotification);
+
+        auto r = hpfFreq.getBounds();
+        const int y = juce::jmax (0, r.getY() - 22);
+        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
+    };
+
+    hpfFreq.onDragEnd = [this]
+    {
+        valuePopup.setVisible (false);
+        activeSlider = nullptr;
+    };
+
+    lpfFreq.onDragStart = [this]
+    {
+        activeSlider = &lpfFreq;
+        valuePopup.setVisible (true);
+    };
+
+    lpfFreq.onValueChange = [this]
+    {
+        activeSlider = &lpfFreq;
+        valuePopup.setVisible (true);
+
+        valuePopup.setText (popupTextFor (lpfFreq), juce::dontSendNotification);
+
+        auto r = lpfFreq.getBounds();
+        const int y = juce::jmax (0, r.getY() - 22);
+        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
+    };
+
+    lpfFreq.onDragEnd = [this]
+    {
+        valuePopup.setVisible (false);
+        activeSlider = nullptr;
+    };
+
+    inTrim.onDragStart = [this]
+    {
+        activeSlider = &inTrim;
+        valuePopup.setVisible (true);
+    };
+
+    inTrim.onValueChange = [this]
+    {
+        activeSlider = &inTrim;
+        valuePopup.setVisible (true);
+
+        valuePopup.setText (popupTextFor (inTrim), juce::dontSendNotification);
+
+        auto r = inTrim.getBounds();
+        const int y = juce::jmax (0, r.getY() - 22);
+        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
+    };
+
+    inTrim.onDragEnd = [this]
+    {
+        valuePopup.setVisible (false);
+        activeSlider = nullptr;
+    };
+
+    outTrim.onDragStart = [this]
+    {
+        activeSlider = &outTrim;
+        valuePopup.setVisible (true);
+    };
+
+    outTrim.onValueChange = [this]
+    {
+        activeSlider = &outTrim;
+        valuePopup.setVisible (true);
+
+        valuePopup.setText (popupTextFor (outTrim), juce::dontSendNotification);
+
+        auto r = outTrim.getBounds();
+        const int y = juce::jmax (0, r.getY() - 22);
+        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
+    };
+
+    outTrim.onDragEnd = [this]
+    {
+        valuePopup.setVisible (false);
+        activeSlider = nullptr;
+    };
+    // ===== End value popup wiring =====
+
     globalBypass.setName ("Global Bypass");
 
     // Global bypass button (no hidden interactions)
@@ -115,6 +454,13 @@ CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor (CompassEQAudioProc
     // Meters (2 only)
     addAndMakeVisible (inputMeter);
     addAndMakeVisible (outputMeter);
+
+    // Value popup label (ensure it exists, is non-interactive, and stays above)
+    addAndMakeVisible (valuePopup);
+    valuePopup.setVisible (false);
+    valuePopup.setJustificationType (juce::Justification::centred);
+    valuePopup.setInterceptsMouseClicks (false, false);
+    valuePopup.toFront (false);
 
     // Attachments using REAL IDs from Phase1Spec.h (namespace phase1)
     attLfFreq  = std::make_unique<SliderAttachment> (apvts, phase1::LF_FREQUENCY_ID,  lfFreq);
@@ -153,6 +499,12 @@ void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
     // ===== Phase 5.0 — Asset-Ready Paint Layer (vector-only, no images) =====
     // Only paint changes. Layout is frozen. All drawing driven by assetSlots.
 
+    // ===== PH9.4 — Paint hygiene ladder (no layout change) =====
+    constexpr float kTitleA   = 0.90f;
+    constexpr float kHeaderA  = 0.75f;
+    constexpr float kMicroA   = 0.45f;
+    constexpr float kTickA    = 0.30f;
+
     const auto editor = getLocalBounds();
     g.fillAll (juce::Colours::black);
 
@@ -169,18 +521,50 @@ void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
     PlateStyle wellPlate   { 0.060f, 0.16f, 1.0f,  4.0f, 0 };
 
     // ---- Major plates (derived from assetSlots zones) ----
-    drawPlate (g, editor.reduced (8), bgPlate);
-
     const int inset = 16; // paint-only breathing room (not layout)
     auto headerFW = fullWidthFrom (assetSlots.editor, assetSlots.headerZone, inset);
     auto filters  = fullWidthFrom (assetSlots.editor, assetSlots.filtersZone, inset);
     auto bands    = fullWidthFrom (assetSlots.editor, assetSlots.bandsZone, inset);
     auto trims    = fullWidthFrom (assetSlots.editor, assetSlots.trimZone, inset);
 
-    drawPlate (g, headerFW, headerPlate);
-    drawPlate (g, filters,  zonePlate);
-    drawPlate (g, bands,    zonePlate);
-    drawPlate (g, trims,    zonePlate);
+    // ===== PH9.1 — Protect meter lanes (paint-only) =====
+    {
+        constexpr int meterW   = 18;
+        constexpr int meterPad = 8;
+        const int leftCut  = 24 + meterW + meterPad;
+        const int rightCut = getWidth() - 24 - meterW - meterPad;
+
+        g.saveState();
+        g.reduceClipRegion (juce::Rectangle<int> (leftCut, 0, rightCut - leftCut, getHeight()));
+
+        drawPlate (g, editor.reduced (8), bgPlate);
+
+        drawPlate (g, headerFW, headerPlate);
+        drawPlate (g, filters,  zonePlate);
+        drawPlate (g, bands,    zonePlate);
+        drawPlate (g, trims,    zonePlate);
+
+        // ---- Optional micro separators aligned to plate edges (no new UI elements) ----
+        {
+            g.setColour (juce::Colours::white.withAlpha (0.06f));
+
+            // vertical edges of the bands plate (helps future asset snapping)
+            if (! bands.isEmpty())
+            {
+                g.drawLine ((float) bands.getX(),         (float) bands.getY(),    (float) bands.getX(),         (float) bands.getBottom(), 1.0f);
+                g.drawLine ((float) bands.getRight() - 1, (float) bands.getY(),    (float) bands.getRight() - 1, (float) bands.getBottom(), 1.0f);
+            }
+
+            // horizontal separators between major zones
+            if (! filters.isEmpty())
+                g.drawLine ((float) filters.getX(), (float) filters.getBottom(), (float) filters.getRight(), (float) filters.getBottom(), 1.0f);
+
+            if (! bands.isEmpty())
+                g.drawLine ((float) bands.getX(), (float) bands.getBottom(), (float) bands.getRight(), (float) bands.getBottom(), 1.0f);
+        }
+
+        g.restoreState();
+    }
 
     // ---- Sub-plates: meters, bypass, filter wells, column plates ----
     // Meter wells (use actual meter bounds expanded slightly)
@@ -200,63 +584,44 @@ void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
     drawPlate (g, assetSlots.colHMF.expanded (14, 14).getIntersection (editor), subPlate);
     drawPlate (g, assetSlots.colHF.expanded (14, 14).getIntersection (editor),  subPlate);
 
-    // ---- Optional micro separators aligned to plate edges (no new UI elements) ----
-    {
-        g.setColour (juce::Colours::white.withAlpha (0.06f));
-
-        // vertical edges of the bands plate (helps future asset snapping)
-        if (! bands.isEmpty())
-        {
-            g.drawLine ((float) bands.getX(),         (float) bands.getY(),    (float) bands.getX(),         (float) bands.getBottom(), 1.0f);
-            g.drawLine ((float) bands.getRight() - 1, (float) bands.getY(),    (float) bands.getRight() - 1, (float) bands.getBottom(), 1.0f);
-        }
-
-        // horizontal separators between major zones
-        if (! filters.isEmpty())
-            g.drawLine ((float) filters.getX(), (float) filters.getBottom(), (float) filters.getRight(), (float) filters.getBottom(), 1.0f);
-
-        if (! bands.isEmpty())
-            g.drawLine ((float) bands.getX(), (float) bands.getBottom(), (float) bands.getRight(), (float) bands.getBottom(), 1.0f);
-    }
-
     // ---- Keep your existing Phase 3.3 text system (headers/legends/ticks) ----
     // Fonts
     const auto titleFont  = juce::FontOptions (18.0f, juce::Font::bold);
     const auto headerFont = juce::FontOptions (11.0f, juce::Font::bold);
     const auto microFont  = juce::FontOptions (9.0f);
 
-    auto drawHeaderAbove = [&g, &headerFont] (const char* txt, juce::Rectangle<int> b, int yOffset)
+    auto drawHeaderAbove = [&g, &headerFont, kHeaderA] (const char* txt, juce::Rectangle<int> b, int yOffset)
     {
-        g.setColour (juce::Colours::white.withAlpha (0.70f));
+        g.setColour (juce::Colours::white.withAlpha (kHeaderA));
         g.setFont (headerFont);
         g.drawFittedText (txt, b.getX(), b.getY() + yOffset, b.getWidth(), 12, juce::Justification::centred, 1);
     };
 
-    auto drawLegendBelow = [&g, &microFont] (const char* txt, juce::Rectangle<int> b, int yOffset)
+    auto drawLegendBelow = [&g, &microFont, kMicroA] (const char* txt, juce::Rectangle<int> b, int yOffset)
     {
-        g.setColour (juce::Colours::white.withAlpha (0.42f));
+        g.setColour (juce::Colours::white.withAlpha (kMicroA));
         g.setFont (microFont);
         g.drawFittedText (txt, b.getX(), b.getBottom() + yOffset, b.getWidth(), 12, juce::Justification::centred, 1);
     };
 
-    auto drawTick = [&g] (juce::Rectangle<int> b, int yOffset)
+    auto drawTick = [&g, kTickA] (juce::Rectangle<int> b, int yOffset)
     {
         const int cx = b.getCentreX();
         const int y0 = b.getY() + yOffset;
         const int y1 = y0 + 6;
-        g.setColour (juce::Colours::white.withAlpha (0.26f));
+        g.setColour (juce::Colours::white.withAlpha (kTickA));
         g.drawLine ((float) cx, (float) y0, (float) cx, (float) y1, 1.0f);
     };
 
-    auto drawColLabel = [&g, &headerFont] (const char* txt, juce::Rectangle<int> columnBounds, int y)
+    auto drawColLabel = [&g, &headerFont, kHeaderA] (const char* txt, juce::Rectangle<int> columnBounds, int y)
     {
-        g.setColour (juce::Colours::white.withAlpha (0.78f));
+        g.setColour (juce::Colours::white.withAlpha (kHeaderA));
         g.setFont (headerFont);
         g.drawFittedText (txt, columnBounds.getX(), y, columnBounds.getWidth(), 14, juce::Justification::centred, 1);
     };
 
     // Title (centered inside header plate)
-    g.setColour (juce::Colours::white.withAlpha (0.88f));
+    g.setColour (juce::Colours::white.withAlpha (kTitleA));
     g.setFont (titleFont);
     if (! headerFW.isEmpty())
         g.drawText ("COMPASS EQ", headerFW.withTrimmedTop (6).withHeight (24), juce::Justification::centred, false);
@@ -409,16 +774,29 @@ void CompassEQAudioProcessorEditor::resized()
     const int z4H = 84;
 
     // ----- Zone 1: Header (meters) -----
-    const int meterW = 18;
-    const int meterPadY = 8;
-    const int meterH = z1H - (meterPadY * 2); // 48
-    const int meterY = z1Y + meterPadY;
+    // ===== PH9.3 — Bottom-anchored meters (bottom -> mid) =====
+    {
+        constexpr int meterW = 18;
 
-    const int inMeterX  = marginL;
-    const int outMeterX = editorW - marginR - meterW;
+        const int inMeterX  = 24;
+        const int outMeterX = getWidth() - 24 - meterW;
 
-    inputMeter.setBounds  (inMeterX,  meterY, meterW, meterH);
-    outputMeter.setBounds (outMeterX, meterY, meterW, meterH);
+        // Bottom anchor: sit above the bottom border, but below trim zone content
+        const int meterBottomPad = 12;
+        const int meterBottomY   = getHeight() - meterBottomPad;
+
+        // Top target: around the middle of the UI (use the filters/bands boundary as a stable "mid")
+        const int midY = z3Y; // filters/bands boundary (stable reference)
+
+        // Small top pad so it doesn't kiss the mid line
+        const int meterTopPad = 10;
+        const int meterY = midY + meterTopPad;
+
+        const int meterH = juce::jmax (60, meterBottomY - meterY);
+
+        inputMeter.setBounds  (inMeterX,  meterY, meterW, meterH);
+        outputMeter.setBounds (outMeterX, meterY, meterW, meterH);
+    }
 
     // ----- Zone 2: Filters (HPF/LPF) -----
     const int filterKnob = 48;
@@ -488,28 +866,35 @@ void CompassEQAudioProcessorEditor::resized()
     hfGain.setBounds (centerX (hfX, hfW, kPrimary),   lfGainY, kPrimary,   kPrimary);
 
     // ----- Zone 4: Trim + Bypass -----
-    // Trim knobs are primary 56x56, vertically centered in zone (84 => y = 336 + (84-56)/2 = 350)
-    const int trimY = z4Y + ((z4H - kPrimary) / 2); // 350
+    // ===== PH9.4 — Zone 4: Center BYPASS + symmetric trims =====
+    {
+        constexpr int g = 8;
 
-    // Keep bypass size as currently used (no new control/visual decision introduced here)
-    const int bypassW = 140;
-    const int bypassH = 32;
+        // Re-derive Zone 4 from editor bounds (no floats, deterministic)
+        auto editor = getLocalBounds();
+        auto zone4  = editor.removeFromBottom (84).reduced (24, 0); // Zone 4 height per freeze spec
 
-    const int minGapToBypass = 32;
+        // Vertical centering in Zone 4
+        constexpr int trimSize   = 56;
+        constexpr int bypassW    = 140;
+        constexpr int bypassH    = 32;
 
-    // Center the whole group: [Trim56] gap32 [Bypass140] gap32 [Trim56] = 316
-    const int groupW = kPrimary + minGapToBypass + bypassW + minGapToBypass + kPrimary; // 316
-    const int groupX = (editorW - groupW) / 2;                                         // 222
+        const int cy = zone4.getCentreY();
 
-    const int inTrimX  = groupX;
-    const int bypassX  = groupX + kPrimary + minGapToBypass;
-    const int outTrimX = bypassX + bypassW + minGapToBypass;
+        // BYPASS centered
+        const auto bypassBounds = juce::Rectangle<int> (0, 0, bypassW, bypassH)
+                                    .withCentre ({ zone4.getCentreX(), cy });
+        globalBypass.setBounds (bypassBounds);
 
-    const int bypassY = z4Y + ((z4H - bypassH) / 2);
+        // Trims: symmetric around bypass, keep >= 32px spacing (4g)
+        constexpr int minGapToBypass = 32;
 
-    inTrim.setBounds  (inTrimX,  trimY, kPrimary, kPrimary);
-    outTrim.setBounds (outTrimX, trimY, kPrimary, kPrimary);
-    globalBypass.setBounds (bypassX, bypassY, bypassW, bypassH);
+        const int leftTrimCx  = bypassBounds.getX() - minGapToBypass - (trimSize / 2);
+        const int rightTrimCx = bypassBounds.getRight() + minGapToBypass + (trimSize / 2);
+
+        inTrim.setBounds  (juce::Rectangle<int> (0, 0, trimSize, trimSize).withCentre ({ leftTrimCx,  cy }));
+        outTrim.setBounds (juce::Rectangle<int> (0, 0, trimSize, trimSize).withCentre ({ rightTrimCx, cy }));
+    }
 
     // ===== Phase 4.0 — Asset Slot Map (derived from existing bounds) =====
     {
