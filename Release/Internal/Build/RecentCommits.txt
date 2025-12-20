@@ -1,0 +1,19 @@
+47f2b62 (HEAD -> ph7_final_qa, tag: PH8_RELEASE_PREP_START, tag: PH7_UI_QA_FREEZE, tag: PH7_PUREMODE_TOGGLE_PASS) Hidden Pure Mode: Option-click BYPASS toggles pureMode without toggling bypass
+187fbbb (tag: PH6_0_PASS) PH6.0: Paint-only labels + audit overlay flag (slot/knob/meter bounds)
+81e9884 (tag: PH5_0_PASS) PH5.0: Asset-ready paint layer driven by AssetSlots (vector plates, no images)
+0a57236 (tag: PH4_0_PASS) PH4.0: Asset slot map derived from component bounds (no layout drift)
+e1f3061 (tag: PH3_BASELINE_UI_EDITOR, ph3_protection) PH3 baseline: UI editor refactor accepted (new diff base)
+38c4e09 (tag: PH2_COMPLETE_38c4e09, tag: PH2_COMPLETE, tag: PH2B_PASS, ph2c_neutrality, ph2b_clean, ph2_complete_lock) PH2B: RT-safe EQ bands (RBJ biquads, no JUCE make* in audio thread)
+a8cbb9d PH2B: EQ bands (LF/LMF/HMF/HF) wired
+d186a1a (tag: PH2B_WORKING_preForeman, tag: PH2A2_PASS, ph2a2_clean) Phase 2A-2: DSP wiring (in/out trim + HPF18 + LPF12) into processBlock
+82f6212 (tag: PH2A2_WORKING_checkpoint, phase2a2-clean) revert: restore Source/Core tree (Phase 1 should not move legacy code)
+b88c77b (tag: phase1-pass) Phase 1: builds VST3, APVTS wired, unity pass-through, meters, UI skeleton
+903c736 Ignore embedded repo path (prevent accidental submodule/embed)
+c277d9b Hard reset: purge build artifacts and Source implementation; recreate empty skeleton files
+b7e63b5 (main) Restore byte-identical state save/restore (Phase 2A-2 compliance)
+6dbd257 Phase 2A-2: DSP wiring (Input/Output Trim + HPF/LPF)
+bb7d65d (origin/main, origin/HEAD) Ignore build artifacts and .DS_Store
+ffcf4f7 Add Phase lock + ignore build/ and .DS_Store
+5ff855e Fix APVTS construction + state save/restore wiring
+5fee456 Add Phase 2A optional addendum (non-authoritative)
+a348dfd Phase 1: Skeleton JUCE VST3 (passthrough + core stubs)

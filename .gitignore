@@ -1,23 +1,6 @@
-# macOS
+/build/
+/CMakeFiles/
+/cmake-build-*/
+/*.vst3/
+/*.component
 .DS_Store
-**/.DS_Store
-
-# CMake build outputs
-build/
-cmake-build-*/
-CMakeFiles/
-CMakeCache.txt
-*.cmake
-Makefile
-*.ninja
-*.ninja_deps
-*.ninja_log
-
-# JUCE/IDE artefacts
-*_artefacts/
-JuceLibraryCode/
-.DS_Store
-build/
-
-# Never track embedded repos
-1_Core/CMB_Core/
