@@ -69,9 +69,10 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider (
     const auto cy = std::round (centre.y);
     const auto r = radius;
 
-    // Scale-dependent thicknesses (hardware silhouette)
-    const auto rimPx = juce::jlimit (1.0f, 2.0f, std::round (r * 0.06f));
-    const auto lipPx = juce::jlimit (2.0f, 4.0f, std::round (r * 0.08f));
+    // Scale-dependent thicknesses (hardware silhouette - stronger for visibility)
+    const auto rimPx = juce::jlimit (1.5f, 3.0f, std::round (r * 0.08f));
+    const auto lipPx = juce::jlimit (1.0f, 2.5f, std::round (r * 0.05f));
+    const auto innerShadowPx = juce::jlimit (1.0f, 2.0f, std::round (r * 0.04f));
 
     // Base matte charcoal body
     const auto bodyColour = juce::Colour::fromRGB (40, 40, 40);
@@ -86,14 +87,6 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider (
     g.setGradientFill (cavityGradient);
     g.fillEllipse (cx - r * 0.95f, cy - r * 0.95f, r * 1.9f, r * 1.9f);
 
-    // Side-wall illusion: darker falloff in lower half (simulates depth, not drop shadow)
-    const auto sideWallRadius = r * 0.92f;
-    juce::ColourGradient sideWallGradient (juce::Colours::transparentBlack, cx, cy - r * 0.3f,
-                                          juce::Colour::fromRGB (25, 25, 25).withAlpha (0.4f), cx, cy + r * 0.5f, false);
-    sideWallGradient.addColour (0.6f, juce::Colour::fromRGB (30, 30, 30).withAlpha (0.25f));
-    g.setGradientFill (sideWallGradient);
-    g.fillEllipse (cx - sideWallRadius, cy - sideWallRadius, sideWallRadius * 2.0f, sideWallRadius * 2.0f);
-
     // Face shading: soft, wide, top-biased highlight (reduced hotspot)
     const auto highlightCy = cy - r * 0.3f;
     juce::ColourGradient highlightGradient (juce::Colours::white.withAlpha (0.06f), cx, highlightCy,
@@ -103,6 +96,19 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider (
     g.setGradientFill (highlightGradient);
     g.fillEllipse (cx - r * 0.85f, cy - r * 0.85f, r * 1.7f, r * 1.7f);
 
+    // Bottom occlusion: vertical gradient overlay INSIDE knob (depth cue)
+    g.saveState();
+    juce::Path knobClip;
+    knobClip.addEllipse (cx - r, cy - r, r * 2.0f, r * 2.0f);
+    g.reduceClipRegion (knobClip);
+    
+    juce::ColourGradient bottomOcclusion (juce::Colours::transparentBlack, cx, cy - r * 0.5f,
+                                         juce::Colour::fromRGB (20, 20, 20).withAlpha (0.6f), cx, cy + r * 0.7f, false);
+    bottomOcclusion.addColour (0.5f, juce::Colour::fromRGB (25, 25, 25).withAlpha (0.35f));
+    g.setGradientFill (bottomOcclusion);
+    g.fillEllipse (cx - r, cy - r, r * 2.0f, r * 2.0f);
+    g.restoreState();
+
     // Secondary subtle radial gradient (micro-texture illusion - breaks perfect flatness)
     const auto textureCx = cx + r * 0.15f;
     const auto textureCy = cy - r * 0.2f;
@@ -111,44 +117,44 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider (
     g.setGradientFill (textureGradient);
     g.fillEllipse (cx - r * 0.6f, cy - r * 0.6f, r * 1.2f, r * 1.2f);
 
-    // Hardware silhouette: outer dark rim (separates knob from background)
-    g.setColour (juce::Colours::black.withAlpha (0.35f));
+    // A) Strong 3 concentric rings for clear 3D separation
+    // 1) Outer rim: darker stroke (stronger alpha for visibility)
+    g.setColour (juce::Colours::black.withAlpha (0.55f));
     g.drawEllipse (cx - r, cy - r, r * 2.0f, r * 2.0f, rimPx);
 
-    // Hardware silhouette: stronger lip ring with gradient-like effect (face/side separation)
-    const auto lipRadius = r * 0.94f;
-    const auto lipInnerRadius = r * 0.96f;
-    
-    // Outer edge of lip (slightly darker)
-    g.setColour (juce::Colours::black.withAlpha (0.32f));
-    g.drawEllipse (cx - lipRadius, cy - lipRadius, lipRadius * 2.0f, lipRadius * 2.0f, lipPx * 0.6f);
-    
-    // Inner edge of lip (slightly lighter - creates gradient illusion)
-    g.setColour (juce::Colour::fromRGB (45, 45, 45).withAlpha (0.4f));
-    g.drawEllipse (cx - lipInnerRadius, cy - lipInnerRadius, lipInnerRadius * 2.0f, lipInnerRadius * 2.0f, lipPx * 0.4f);
+    // 2) Lip highlight ring just inside rim: lighter stroke (thin)
+    const auto lipRadius = r * 0.96f;
+    g.setColour (juce::Colour::fromRGB (55, 55, 55).withAlpha (0.5f));
+    g.drawEllipse (cx - lipRadius, cy - lipRadius, lipRadius * 2.0f, lipRadius * 2.0f, lipPx);
 
-    // Indicator line: scale-dependent thickness with rounded caps (inset by 12%)
+    // 3) Inner shadow ring: slightly darker than face (thin)
+    const auto innerShadowRadius = r * 0.92f;
+    g.setColour (juce::Colour::fromRGB (32, 32, 32).withAlpha (0.45f));
+    g.drawEllipse (cx - innerShadowRadius, cy - innerShadowRadius, innerShadowRadius * 2.0f, innerShadowRadius * 2.0f, innerShadowPx);
+
+    // Indicator line: shorter (more inset), less bright, subtle dark under-stroke
     const auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
-    const auto lineLength = r * 0.57f;  // Reduced from 0.65f (inset by ~12%)
+    const auto lineLength = r * 0.50f;  // Further inset from rim (was 0.57f)
     
-    // Thickness scaling: 40px -> 1.1px (thinner), 48px -> 1.6px, 56px -> 2.0px
+    // Thickness scaling: 40px -> 1.1px, 48px -> 1.6px, 56px -> 2.0px
     float lineThickness;
-    if (r <= 20.0f)      lineThickness = 1.1f;  // 40px knob (thinner)
+    if (r <= 20.0f)      lineThickness = 1.1f;  // 40px knob
     else if (r <= 24.0f) lineThickness = 1.6f;  // 48px knob
     else                 lineThickness = 2.0f;  // 56px knob
 
     const auto lineStart = juce::Point<float> (cx, cy).getPointOnCircumference (r * 0.25f, angle);
     const auto lineEnd = juce::Point<float> (cx, cy).getPointOnCircumference (lineLength, angle);
 
-    // Subtle darker under-stroke (reduced contrast - reads like printed paint, not neon)
-    g.setColour (juce::Colour::fromRGB (30, 30, 30).withAlpha (0.5f));
+    // Very subtle dark under-stroke (thin) for contrast
+    const auto underStrokeThickness = juce::jmax (1.0f, lineThickness * 0.7f);
+    g.setColour (juce::Colour::fromRGB (25, 25, 25).withAlpha (0.6f));
     juce::Path underStroke;
     underStroke.startNewSubPath (lineStart);
     underStroke.lineTo (lineEnd);
-    g.strokePath (underStroke, juce::PathStrokeType (lineThickness + 0.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.strokePath (underStroke, juce::PathStrokeType (underStrokeThickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-    // Main indicator line (white, rounded caps)
-    g.setColour (juce::Colours::white);
+    // Main indicator line (slightly off-white, less LED-like, rounded caps)
+    g.setColour (juce::Colour::fromRGB (240, 240, 240));  // Slightly less bright than pure white
     juce::Path indicatorPath;
     indicatorPath.startNewSubPath (lineStart);
     indicatorPath.lineTo (lineEnd);
