@@ -64,36 +64,88 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider (
     const auto centre = bounds.getCentre();
     const auto radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
 
-    // Circular body (matte charcoal)
+    // Snap centre to pixel grid for anti-alias stability
+    const auto cx = std::round (centre.x);
+    const auto cy = std::round (centre.y);
+    const auto r = radius;
+
+    // Scale-dependent thicknesses (hardware silhouette)
+    const auto rimPx = juce::jlimit (1.0f, 2.0f, std::round (r * 0.06f));
+    const auto lipPx = juce::jlimit (2.0f, 4.0f, std::round (r * 0.08f));
+
+    // Base matte charcoal body
     const auto bodyColour = juce::Colour::fromRGB (40, 40, 40);
     g.setColour (bodyColour);
-    g.fillEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f);
+    g.fillEllipse (cx - r, cy - r, r * 2.0f, r * 2.0f);
 
-    // Soft inner shadow (dark ring near edge)
-    const auto shadowRadius = radius * 0.92f;
-    g.setColour (juce::Colours::black.withAlpha (0.3f));
-    g.drawEllipse (centre.x - shadowRadius, centre.y - shadowRadius,
-                   shadowRadius * 2.0f, shadowRadius * 2.0f, 1.5f);
+    // Inner cavity depth (vignette falloff - darker at edges, slightly lighter at center)
+    juce::ColourGradient cavityGradient (juce::Colour::fromRGB (35, 35, 35), cx, cy,
+                                         juce::Colour::fromRGB (42, 42, 42), cx, cy, false);
+    cavityGradient.addColour (0.3f, juce::Colour::fromRGB (38, 38, 38));
+    cavityGradient.addColour (0.7f, juce::Colour::fromRGB (40, 40, 40));
+    g.setGradientFill (cavityGradient);
+    g.fillEllipse (cx - r * 0.95f, cy - r * 0.95f, r * 1.9f, r * 1.9f);
 
-    // Subtle top highlight (gradient-like effect using arc)
-    const auto highlightRadius = radius * 0.85f;
-    const auto highlightStart = -juce::MathConstants<float>::pi * 0.5f;
-    const auto highlightEnd = highlightStart + juce::MathConstants<float>::pi * 0.3f;
-    juce::Path highlightPath;
-    highlightPath.addCentredArc (centre.x, centre.y, highlightRadius, highlightRadius,
-                                0.0f, highlightStart, highlightEnd, true);
-    g.setColour (juce::Colours::white.withAlpha (0.15f));
-    g.strokePath (highlightPath, juce::PathStrokeType (radius * 0.15f));
+    // Bottom-weighted shadow/occlusion (darker lower interior)
+    const auto shadowRadius = r * 0.88f;
+    juce::Path shadowPath;
+    shadowPath.addCentredArc (cx, cy, shadowRadius, shadowRadius,
+                              0.0f, juce::MathConstants<float>::pi * 0.3f,
+                              juce::MathConstants<float>::pi * 0.7f, true);
+    g.setColour (juce::Colours::black.withAlpha (0.25f));
+    g.strokePath (shadowPath, juce::PathStrokeType (r * 0.12f));
 
-    // Clear white indicator line
+    // Matte radial highlight (light from above - center offset upward)
+    const auto highlightCy = cy - r * 0.25f;
+    juce::ColourGradient highlightGradient (juce::Colours::white.withAlpha (0.08f), cx, highlightCy,
+                                           juce::Colours::transparentWhite, cx, cy + r * 0.3f, false);
+    highlightGradient.addColour (0.4f, juce::Colours::white.withAlpha (0.04f));
+    g.setGradientFill (highlightGradient);
+    g.fillEllipse (cx - r * 0.75f, cy - r * 0.75f, r * 1.5f, r * 1.5f);
+
+    // Secondary subtle radial gradient (micro-texture illusion - breaks perfect flatness)
+    const auto textureCx = cx + r * 0.15f;
+    const auto textureCy = cy - r * 0.2f;
+    juce::ColourGradient textureGradient (juce::Colours::white.withAlpha (0.03f), textureCx, textureCy,
+                                          juce::Colours::transparentWhite, cx, cy, false);
+    g.setGradientFill (textureGradient);
+    g.fillEllipse (cx - r * 0.6f, cy - r * 0.6f, r * 1.2f, r * 1.2f);
+
+    // Hardware silhouette: outer dark rim (separates knob from background)
+    g.setColour (juce::Colours::black.withAlpha (0.35f));
+    g.drawEllipse (cx - r, cy - r, r * 2.0f, r * 2.0f, rimPx);
+
+    // Hardware silhouette: lip ring (top face to side wall transition)
+    const auto lipRadius = r * 0.94f;
+    g.setColour (juce::Colours::black.withAlpha (0.28f));
+    g.drawEllipse (cx - lipRadius, cy - lipRadius, lipRadius * 2.0f, lipRadius * 2.0f, lipPx);
+
+    // Indicator line: scale-dependent thickness with rounded caps
     const auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
-    const auto lineLength = radius * 0.65f;
-    const auto lineThickness = juce::jmax (1.5f, radius * 0.04f);
-    const auto lineStart = centre.getPointOnCircumference (radius * 0.25f, angle);
-    const auto lineEnd = centre.getPointOnCircumference (lineLength, angle);
+    const auto lineLength = r * 0.65f;
+    
+    // Thickness scaling: 40px -> 1.3px, 48px -> 1.6px, 56px -> 2.0px
+    float lineThickness;
+    if (r <= 20.0f)      lineThickness = 1.3f;  // 40px knob
+    else if (r <= 24.0f) lineThickness = 1.6f;  // 48px knob
+    else                 lineThickness = 2.0f;  // 56px knob
 
+    const auto lineStart = juce::Point<float> (cx, cy).getPointOnCircumference (r * 0.25f, angle);
+    const auto lineEnd = juce::Point<float> (cx, cy).getPointOnCircumference (lineLength, angle);
+
+    // Microscopic dark under-stroke for contrast (super subtle)
+    g.setColour (juce::Colours::black.withAlpha (0.4f));
+    juce::Path underStroke;
+    underStroke.startNewSubPath (lineStart);
+    underStroke.lineTo (lineEnd);
+    g.strokePath (underStroke, juce::PathStrokeType (lineThickness + 0.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    // Main indicator line (white, rounded caps)
     g.setColour (juce::Colours::white);
-    g.drawLine (lineStart.x, lineStart.y, lineEnd.x, lineEnd.y, lineThickness);
+    juce::Path indicatorPath;
+    indicatorPath.startNewSubPath (lineStart);
+    indicatorPath.lineTo (lineEnd);
+    g.strokePath (indicatorPath, juce::PathStrokeType (lineThickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 }
 
 CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor (CompassEQAudioProcessor& p)
