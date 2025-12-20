@@ -222,5 +222,16 @@ private:
     MeterComponent inputMeter;
     MeterComponent outputMeter;
 
+    // ---------------- Custom LookAndFeel ----------------
+    class CompassLookAndFeel final : public juce::LookAndFeel_V4
+    {
+    public:
+        void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
+                               float sliderPos, float rotaryStartAngle, float rotaryEndAngle,
+                               juce::Slider&) override;
+    };
+
+    std::unique_ptr<CompassLookAndFeel> lookAndFeel;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CompassEQAudioProcessorEditor)
 };

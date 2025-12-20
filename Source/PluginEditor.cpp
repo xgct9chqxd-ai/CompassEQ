@@ -38,7 +38,7 @@ namespace
 
     static inline juce::Rectangle<int> fullWidthFrom (juce::Rectangle<int> editor, juce::Rectangle<int> zone, int inset)
     {
-        // “Derived from slots”: we take Y/H from the slot zone, and X/W from the editor bounds.
+        // "Derived from slots": we take Y/H from the slot zone, and X/W from the editor bounds.
         if (zone.isEmpty() || editor.isEmpty())
             return {};
 
@@ -54,12 +54,55 @@ static inline juce::String popupTextFor (juce::Slider& s)
     return s.getTextFromValue (s.getValue());
 }
 
+// ===== Custom LookAndFeel implementation =====
+void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider (
+    juce::Graphics& g, int x, int y, int width, int height,
+    float sliderPos, float rotaryStartAngle, float rotaryEndAngle,
+    juce::Slider&)
+{
+    const auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height);
+    const auto centre = bounds.getCentre();
+    const auto radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
+
+    // Circular body (matte charcoal)
+    const auto bodyColour = juce::Colour::fromRGB (40, 40, 40);
+    g.setColour (bodyColour);
+    g.fillEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f);
+
+    // Soft inner shadow (dark ring near edge)
+    const auto shadowRadius = radius * 0.92f;
+    g.setColour (juce::Colours::black.withAlpha (0.3f));
+    g.drawEllipse (centre.x - shadowRadius, centre.y - shadowRadius,
+                   shadowRadius * 2.0f, shadowRadius * 2.0f, 1.5f);
+
+    // Subtle top highlight (gradient-like effect using arc)
+    const auto highlightRadius = radius * 0.85f;
+    const auto highlightStart = -juce::MathConstants<float>::pi * 0.5f;
+    const auto highlightEnd = highlightStart + juce::MathConstants<float>::pi * 0.3f;
+    juce::Path highlightPath;
+    highlightPath.addCentredArc (centre.x, centre.y, highlightRadius, highlightRadius,
+                                0.0f, highlightStart, highlightEnd, true);
+    g.setColour (juce::Colours::white.withAlpha (0.15f));
+    g.strokePath (highlightPath, juce::PathStrokeType (radius * 0.15f));
+
+    // Clear white indicator line
+    const auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
+    const auto lineLength = radius * 0.65f;
+    const auto lineThickness = juce::jmax (1.5f, radius * 0.04f);
+    const auto lineStart = centre.getPointOnCircumference (radius * 0.25f, angle);
+    const auto lineEnd = centre.getPointOnCircumference (lineLength, angle);
+
+    g.setColour (juce::Colours::white);
+    g.drawLine (lineStart.x, lineStart.y, lineEnd.x, lineEnd.y, lineThickness);
+}
+
 CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor (CompassEQAudioProcessor& p)
     : juce::AudioProcessorEditor (&p)
     , proc (p)
     , apvts (proc.getAPVTS())
     , inputMeter  (proc, true)
     , outputMeter (proc, false)
+    , lookAndFeel (std::make_unique<CompassLookAndFeel>())
 {
     setResizable (false, false);
     setSize (kEditorW, kEditorH);
@@ -498,6 +541,7 @@ void CompassEQAudioProcessorEditor::configureKnob (juce::Slider& s)
     s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     s.setPopupDisplayEnabled (false, false, this);
     s.setDoubleClickReturnValue (false, 0.0);
+    s.setLookAndFeel (lookAndFeel.get());
 }
 
 void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
