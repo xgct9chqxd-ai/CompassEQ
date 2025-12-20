@@ -37,6 +37,15 @@ private:
             stopTimer();
         }
 
+        // Phase 4: Stop timer when component becomes invisible
+        void visibilityChanged() override
+        {
+            if (! isVisible())
+                stopTimer();
+            else if (isTimerRunning() == false)
+                startTimerHz (30);
+        }
+
         void paint (juce::Graphics& g) override
         {
             // Phase 3C: PERFORMANCE BUDGET VERIFICATION CHECKLIST
@@ -295,6 +304,9 @@ private:
     StaticLayerCache staticCache;
     std::atomic<bool> staticCacheDirty { true };
     std::atomic<bool> staticCacheRebuildPending { false };
+
+    // Phase 4: Teardown safety guard (UI thread only, no need for atomic)
+    bool isTearingDown = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CompassEQAudioProcessorEditor)
 };

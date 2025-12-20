@@ -205,343 +205,72 @@ CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor (CompassEQAudioProc
     inTrim.setName ("Input Trim");
     outTrim.setName ("Output Trim");
 
-    // ===== Value popup wiring (per-slider) =====
-    lfFreq.onDragStart = [this]
+    // ===== Value popup wiring (refactored pattern) =====
+    // 1) Startup state: popup must be blank + hidden
+    valuePopup.setText ("", juce::dontSendNotification);
+    valuePopup.setVisible (false);
+
+    // Helper: show/update popup safely with positioning
+    auto showPopupFor = [this] (juce::Slider& s)
     {
-        activeSlider = &lfFreq;
+        valuePopup.setText (popupTextFor (s), juce::dontSendNotification);
         valuePopup.setVisible (true);
-    };
-
-    lfFreq.onValueChange = [this]
-    {
-        activeSlider = &lfFreq;
-        valuePopup.setVisible (true);
-
-        valuePopup.setText (popupTextFor (lfFreq), juce::dontSendNotification);
-
-        auto r = lfFreq.getBounds();
+        
+        auto r = s.getBounds();
         const int y = juce::jmax (0, r.getY() - 22);
         valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
+        valuePopup.repaint();
     };
 
-    lfFreq.onDragEnd = [this]
+    auto hidePopup = [this]()
     {
+        valuePopup.setText ("", juce::dontSendNotification);
         valuePopup.setVisible (false);
-        activeSlider = nullptr;
+        valuePopup.repaint();
     };
 
-    lfGain.onDragStart = [this]
+    // 2) Wire popup behavior for each slider
+    auto wirePopup = [this, showPopupFor, hidePopup] (juce::Slider& s)
     {
-        activeSlider = &lfGain;
-        valuePopup.setVisible (true);
+        s.onDragStart = [this, showPopupFor, &s]
+        {
+            activeSlider = &s;
+            showPopupFor (s);
+        };
+
+        s.onValueChange = [this, showPopupFor, &s]
+        {
+            // Only update while actively dragging
+            if (s.isMouseButtonDown())
+            {
+                activeSlider = &s;
+                showPopupFor (s);
+            }
+        };
+
+        s.onDragEnd = [this, hidePopup]
+        {
+            hidePopup();
+            activeSlider = nullptr;
+        };
     };
 
-    lfGain.onValueChange = [this]
-    {
-        activeSlider = &lfGain;
-        valuePopup.setVisible (true);
+    // Apply to all sliders
+    wirePopup (lfFreq);
+    wirePopup (lfGain);
+    wirePopup (lmfFreq);
+    wirePopup (lmfGain);
+    wirePopup (lmfQ);
+    wirePopup (hmfFreq);
+    wirePopup (hmfGain);
+    wirePopup (hmfQ);
+    wirePopup (hfFreq);
+    wirePopup (hfGain);
+    wirePopup (hpfFreq);
+    wirePopup (lpfFreq);
+    wirePopup (inTrim);
+    wirePopup (outTrim);
 
-        valuePopup.setText (popupTextFor (lfGain), juce::dontSendNotification);
-
-        auto r = lfGain.getBounds();
-        const int y = juce::jmax (0, r.getY() - 22);
-        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
-    };
-
-    lfGain.onDragEnd = [this]
-    {
-        valuePopup.setVisible (false);
-        activeSlider = nullptr;
-    };
-
-    lmfFreq.onDragStart = [this]
-    {
-        activeSlider = &lmfFreq;
-        valuePopup.setVisible (true);
-    };
-
-    lmfFreq.onValueChange = [this]
-    {
-        activeSlider = &lmfFreq;
-        valuePopup.setVisible (true);
-
-        valuePopup.setText (popupTextFor (lmfFreq), juce::dontSendNotification);
-
-        auto r = lmfFreq.getBounds();
-        const int y = juce::jmax (0, r.getY() - 22);
-        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
-    };
-
-    lmfFreq.onDragEnd = [this]
-    {
-        valuePopup.setVisible (false);
-        activeSlider = nullptr;
-    };
-
-    lmfGain.onDragStart = [this]
-    {
-        activeSlider = &lmfGain;
-        valuePopup.setVisible (true);
-    };
-
-    lmfGain.onValueChange = [this]
-    {
-        activeSlider = &lmfGain;
-        valuePopup.setVisible (true);
-
-        valuePopup.setText (popupTextFor (lmfGain), juce::dontSendNotification);
-
-        auto r = lmfGain.getBounds();
-        const int y = juce::jmax (0, r.getY() - 22);
-        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
-    };
-
-    lmfGain.onDragEnd = [this]
-    {
-        valuePopup.setVisible (false);
-        activeSlider = nullptr;
-    };
-
-    lmfQ.onDragStart = [this]
-    {
-        activeSlider = &lmfQ;
-        valuePopup.setVisible (true);
-    };
-
-    lmfQ.onValueChange = [this]
-    {
-        activeSlider = &lmfQ;
-        valuePopup.setVisible (true);
-
-        valuePopup.setText (popupTextFor (lmfQ), juce::dontSendNotification);
-
-        auto r = lmfQ.getBounds();
-        const int y = juce::jmax (0, r.getY() - 22);
-        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
-    };
-
-    lmfQ.onDragEnd = [this]
-    {
-        valuePopup.setVisible (false);
-        activeSlider = nullptr;
-    };
-
-    hmfFreq.onDragStart = [this]
-    {
-        activeSlider = &hmfFreq;
-        valuePopup.setVisible (true);
-    };
-
-    hmfFreq.onValueChange = [this]
-    {
-        activeSlider = &hmfFreq;
-        valuePopup.setVisible (true);
-
-        valuePopup.setText (popupTextFor (hmfFreq), juce::dontSendNotification);
-
-        auto r = hmfFreq.getBounds();
-        const int y = juce::jmax (0, r.getY() - 22);
-        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
-    };
-
-    hmfFreq.onDragEnd = [this]
-    {
-        valuePopup.setVisible (false);
-        activeSlider = nullptr;
-    };
-
-    hmfGain.onDragStart = [this]
-    {
-        activeSlider = &hmfGain;
-        valuePopup.setVisible (true);
-    };
-
-    hmfGain.onValueChange = [this]
-    {
-        activeSlider = &hmfGain;
-        valuePopup.setVisible (true);
-
-        valuePopup.setText (popupTextFor (hmfGain), juce::dontSendNotification);
-
-        auto r = hmfGain.getBounds();
-        const int y = juce::jmax (0, r.getY() - 22);
-        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
-    };
-
-    hmfGain.onDragEnd = [this]
-    {
-        valuePopup.setVisible (false);
-        activeSlider = nullptr;
-    };
-
-    hmfQ.onDragStart = [this]
-    {
-        activeSlider = &hmfQ;
-        valuePopup.setVisible (true);
-    };
-
-    hmfQ.onValueChange = [this]
-    {
-        activeSlider = &hmfQ;
-        valuePopup.setVisible (true);
-
-        valuePopup.setText (popupTextFor (hmfQ), juce::dontSendNotification);
-
-        auto r = hmfQ.getBounds();
-        const int y = juce::jmax (0, r.getY() - 22);
-        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
-    };
-
-    hmfQ.onDragEnd = [this]
-    {
-        valuePopup.setVisible (false);
-        activeSlider = nullptr;
-    };
-
-    hfFreq.onDragStart = [this]
-    {
-        activeSlider = &hfFreq;
-        valuePopup.setVisible (true);
-    };
-
-    hfFreq.onValueChange = [this]
-    {
-        activeSlider = &hfFreq;
-        valuePopup.setVisible (true);
-
-        valuePopup.setText (popupTextFor (hfFreq), juce::dontSendNotification);
-
-        auto r = hfFreq.getBounds();
-        const int y = juce::jmax (0, r.getY() - 22);
-        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
-    };
-
-    hfFreq.onDragEnd = [this]
-    {
-        valuePopup.setVisible (false);
-        activeSlider = nullptr;
-    };
-
-    hfGain.onDragStart = [this]
-    {
-        activeSlider = &hfGain;
-        valuePopup.setVisible (true);
-    };
-
-    hfGain.onValueChange = [this]
-    {
-        activeSlider = &hfGain;
-        valuePopup.setVisible (true);
-
-        valuePopup.setText (popupTextFor (hfGain), juce::dontSendNotification);
-
-        auto r = hfGain.getBounds();
-        const int y = juce::jmax (0, r.getY() - 22);
-        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
-    };
-
-    hfGain.onDragEnd = [this]
-    {
-        valuePopup.setVisible (false);
-        activeSlider = nullptr;
-    };
-
-    hpfFreq.onDragStart = [this]
-    {
-        activeSlider = &hpfFreq;
-        valuePopup.setVisible (true);
-    };
-
-    hpfFreq.onValueChange = [this]
-    {
-        activeSlider = &hpfFreq;
-        valuePopup.setVisible (true);
-
-        valuePopup.setText (popupTextFor (hpfFreq), juce::dontSendNotification);
-
-        auto r = hpfFreq.getBounds();
-        const int y = juce::jmax (0, r.getY() - 22);
-        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
-    };
-
-    hpfFreq.onDragEnd = [this]
-    {
-        valuePopup.setVisible (false);
-        activeSlider = nullptr;
-    };
-
-    lpfFreq.onDragStart = [this]
-    {
-        activeSlider = &lpfFreq;
-        valuePopup.setVisible (true);
-    };
-
-    lpfFreq.onValueChange = [this]
-    {
-        activeSlider = &lpfFreq;
-        valuePopup.setVisible (true);
-
-        valuePopup.setText (popupTextFor (lpfFreq), juce::dontSendNotification);
-
-        auto r = lpfFreq.getBounds();
-        const int y = juce::jmax (0, r.getY() - 22);
-        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
-    };
-
-    lpfFreq.onDragEnd = [this]
-    {
-        valuePopup.setVisible (false);
-        activeSlider = nullptr;
-    };
-
-    inTrim.onDragStart = [this]
-    {
-        activeSlider = &inTrim;
-        valuePopup.setVisible (true);
-    };
-
-    inTrim.onValueChange = [this]
-    {
-        activeSlider = &inTrim;
-        valuePopup.setVisible (true);
-
-        valuePopup.setText (popupTextFor (inTrim), juce::dontSendNotification);
-
-        auto r = inTrim.getBounds();
-        const int y = juce::jmax (0, r.getY() - 22);
-        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
-    };
-
-    inTrim.onDragEnd = [this]
-    {
-        valuePopup.setVisible (false);
-        activeSlider = nullptr;
-    };
-
-    outTrim.onDragStart = [this]
-    {
-        activeSlider = &outTrim;
-        valuePopup.setVisible (true);
-    };
-
-    outTrim.onValueChange = [this]
-    {
-        activeSlider = &outTrim;
-        valuePopup.setVisible (true);
-
-        valuePopup.setText (popupTextFor (outTrim), juce::dontSendNotification);
-
-        auto r = outTrim.getBounds();
-        const int y = juce::jmax (0, r.getY() - 22);
-        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
-    };
-
-    outTrim.onDragEnd = [this]
-    {
-        valuePopup.setVisible (false);
-        activeSlider = nullptr;
-    };
-    // ===== End value popup wiring =====
 
     globalBypass.setName ("Global Bypass");
 
@@ -580,10 +309,10 @@ CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor (CompassEQAudioProc
 
     // Value popup label (ensure it exists, is non-interactive, and stays above)
     addAndMakeVisible (valuePopup);
-    valuePopup.setVisible (false);
     valuePopup.setJustificationType (juce::Justification::centred);
     valuePopup.setInterceptsMouseClicks (false, false);
     valuePopup.toFront (false);
+    // Popup startup state already set above (blank + hidden)
 
     // Attachments using REAL IDs from Phase1Spec.h (namespace phase1)
     attLfFreq  = std::make_unique<SliderAttachment> (apvts, phase1::LF_FREQUENCY_ID,  lfFreq);
@@ -611,7 +340,13 @@ CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor (CompassEQAudioProc
 
 CompassEQAudioProcessorEditor::~CompassEQAudioProcessorEditor()
 {
-    // Clear LookAndFeel from all sliders to prevent crash on destruction
+    // Phase 4: Set teardown flag first to prevent AsyncUpdater callbacks
+    isTearingDown = true;
+    
+    // Phase 4: Cancel any pending AsyncUpdater callbacks
+    cancelPendingUpdate();
+    
+    // Phase 4: Clear LookAndFeel from all sliders to prevent crash on destruction
     lfFreq.setLookAndFeel (nullptr);
     lfGain.setLookAndFeel (nullptr);
     lmfFreq.setLookAndFeel (nullptr);
@@ -626,6 +361,8 @@ CompassEQAudioProcessorEditor::~CompassEQAudioProcessorEditor()
     lpfFreq.setLookAndFeel (nullptr);
     inTrim.setLookAndFeel (nullptr);
     outTrim.setLookAndFeel (nullptr);
+    
+    // Phase 4: lookAndFeel unique_ptr will be destroyed here (after all components cleared)
 }
 
 void CompassEQAudioProcessorEditor::configureKnob (juce::Slider& s)
@@ -1038,6 +775,10 @@ void CompassEQAudioProcessorEditor::handleAsyncUpdate()
     staticCacheRebuildPending.store (false, std::memory_order_release);
     
     jassert (juce::MessageManager::getInstance()->isThisTheMessageThread());
+    
+    // Phase 4: Early return if teardown is in progress
+    if (isTearingDown)
+        return;
     
     // Rebuild cache only if visible and bounds are valid
     if (! isVisible() || getBounds().isEmpty())
