@@ -535,6 +535,25 @@ CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor (CompassEQAudioProc
     attBypass  = std::make_unique<ButtonAttachment> (apvts, phase1::GLOBAL_BYPASS_ID, globalBypass);
 }
 
+CompassEQAudioProcessorEditor::~CompassEQAudioProcessorEditor()
+{
+    // Clear LookAndFeel from all sliders to prevent crash on destruction
+    lfFreq.setLookAndFeel (nullptr);
+    lfGain.setLookAndFeel (nullptr);
+    lmfFreq.setLookAndFeel (nullptr);
+    lmfGain.setLookAndFeel (nullptr);
+    lmfQ.setLookAndFeel (nullptr);
+    hmfFreq.setLookAndFeel (nullptr);
+    hmfGain.setLookAndFeel (nullptr);
+    hmfQ.setLookAndFeel (nullptr);
+    hfFreq.setLookAndFeel (nullptr);
+    hfGain.setLookAndFeel (nullptr);
+    hpfFreq.setLookAndFeel (nullptr);
+    lpfFreq.setLookAndFeel (nullptr);
+    inTrim.setLookAndFeel (nullptr);
+    outTrim.setLookAndFeel (nullptr);
+}
+
 void CompassEQAudioProcessorEditor::configureKnob (juce::Slider& s)
 {
     s.setSliderStyle (juce::Slider::RotaryVerticalDrag);

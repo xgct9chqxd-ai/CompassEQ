@@ -8,7 +8,7 @@ class CompassEQAudioProcessorEditor final : public juce::AudioProcessorEditor
 {
 public:
     explicit CompassEQAudioProcessorEditor (CompassEQAudioProcessor&);
-    ~CompassEQAudioProcessorEditor() override = default;
+    ~CompassEQAudioProcessorEditor() override;
 
     void paint (juce::Graphics&) override;
     void resized() override;
