@@ -28,6 +28,12 @@ namespace
             r = r.reduced (s.insetPx);
 
         const auto rf = r.toFloat();
+
+        g.setColour (juce::Colours::white.withAlpha (s.fillA));
+        g.fillRoundedRectangle (rf, s.radius);
+
+        g.setColour (juce::Colours::white.withAlpha (s.strokeA));
+        g.drawRoundedRectangle (rf, s.radius, s.strokeW);
     }
 
     static inline juce::Rectangle<int> fullWidthFrom (juce::Rectangle<int> editor, juce::Rectangle<int> zone, int inset)
