@@ -76,6 +76,132 @@ namespace UIStyle
         }
     }
 
+    // ===== Phase 2: Pixel Snapping + Discrete Ladders =====
+    namespace Snap
+    {
+        // Snap to device pixel grid
+        inline float snapPx (float x, float physicalScale)
+        {
+            return std::round (x * physicalScale) / physicalScale;
+        }
+
+        inline float snapPxCeil (float x, float physicalScale)
+        {
+            return std::ceil (x * physicalScale) / physicalScale;
+        }
+
+        inline float snapPxFloor (float x, float physicalScale)
+        {
+            return std::floor (x * physicalScale) / physicalScale;
+        }
+
+        inline int snapIntPx (int x, float physicalScale)
+        {
+            return juce::roundToInt (std::round ((float) x * physicalScale) / physicalScale);
+        }
+
+        inline juce::Point<float> snapPoint (juce::Point<float> p, float physicalScale)
+        {
+            return { snapPx (p.x, physicalScale), snapPx (p.y, physicalScale) };
+        }
+    }
+
+    // ===== Phase 2: Discrete Stroke Ladder (by scaleKey, not radius) =====
+    namespace StrokeLadder
+    {
+        // Discrete stroke widths keyed by scaleKey (1.00, 2.00, etc.)
+        inline float hairlineStroke (float scaleKey)
+        {
+            if (scaleKey >= 1.75f) return 0.5f;  // 2.00: 0.5 logical = 1.0 physical
+            return 1.0f;  // 1.00: 1.0 logical = 1.0 physical
+        }
+
+        inline float ringStrokeOuter (float scaleKey)
+        {
+            if (scaleKey >= 1.75f) return 2.0f;  // 2.00
+            return 1.5f;  // 1.00
+        }
+
+        inline float ringStrokeLip (float scaleKey)
+        {
+            if (scaleKey >= 1.75f) return 1.5f;  // 2.00
+            return 1.0f;  // 1.00
+        }
+
+        inline float ringStrokeInner (float scaleKey)
+        {
+            if (scaleKey >= 1.75f) return 1.5f;  // 2.00
+            return 1.0f;  // 1.00
+        }
+
+        inline float indicatorStroke (float scaleKey)
+        {
+            if (scaleKey >= 1.75f) return 2.0f;  // 2.00
+            return 1.6f;  // 1.00
+        }
+
+        inline float indicatorUnderStroke (float scaleKey)
+        {
+            return indicatorStroke (scaleKey) + 0.4f;
+        }
+
+        inline float plateBorderStroke (float scaleKey)
+        {
+            if (scaleKey >= 1.75f) return 1.0f;  // 2.00
+            return 1.0f;  // 1.00
+        }
+    }
+
+    // ===== Phase 2: Discrete Font Ladder (by scaleKey) =====
+    // Phase 3: Static prebuilt tables to avoid per-paint construction
+    namespace FontLadder
+    {
+        // Prebuilt font tables for 1.00 and 2.00 scale keys (ODR-safe inline variables)
+        inline const juce::FontOptions titleFont_1_00  { 18.0f, juce::Font::bold };
+        inline const juce::FontOptions titleFont_2_00  { 18.0f, juce::Font::bold };
+        inline const juce::FontOptions headerFont_1_00 { 11.0f, juce::Font::bold };
+        inline const juce::FontOptions headerFont_2_00 { 11.0f, juce::Font::bold };
+        inline const juce::FontOptions microFont_1_00  { 9.0f };
+        inline const juce::FontOptions microFont_2_00  { 9.0f };
+
+        inline const juce::FontOptions& titleFont (float scaleKey)
+        {
+            return (scaleKey >= 1.75f) ? titleFont_2_00 : titleFont_1_00;
+        }
+
+        inline const juce::FontOptions& headerFont (float scaleKey)
+        {
+            return (scaleKey >= 1.75f) ? headerFont_2_00 : headerFont_1_00;
+        }
+
+        inline const juce::FontOptions& microFont (float scaleKey)
+        {
+            return (scaleKey >= 1.75f) ? microFont_2_00 : microFont_1_00;
+        }
+    }
+
+    // ===== Phase 2: Meter Discrete Ladder =====
+    namespace MeterLadder
+    {
+        inline float dotSizeMin (float scaleKey)
+        {
+            if (scaleKey >= 1.75f) return 2.5f;  // 2.00
+            return 2.5f;  // 1.00
+        }
+
+        inline float dotSizeMax (float scaleKey)
+        {
+            if (scaleKey >= 1.75f) return 7.0f;  // 2.00
+            return 7.0f;  // 1.00
+        }
+
+        inline float dotGapMin (float scaleKey)
+        {
+            if (scaleKey >= 1.75f) return 1.0f;  // 2.00
+            return 1.0f;  // 1.00
+        }
+    }
+
     // ===== Knob rendering =====
     namespace Knob
     {
@@ -96,68 +222,30 @@ namespace UIStyle
         constexpr float occlusionTopOffset = -0.5f;
         constexpr float occlusionBottomOffset = 0.7f;
 
-        // Stroke width ladder (scaffold for future scaleKey)
-        struct StrokeWidthLadder
+        // Phase 2: Discrete stroke ladder by scaleKey (not radius)
+        inline float getOuterRimThickness (float scaleKey)
         {
-            float outerRim40;
-            float outerRim48;
-            float outerRim56;
-            float lip40;
-            float lip48;
-            float lip56;
-            float innerShadow40;
-            float innerShadow48;
-            float innerShadow56;
-            float indicator40;
-            float indicator48;
-            float indicator56;
-        };
-
-        inline StrokeWidthLadder getStrokeWidths()
-        {
-            return {
-                2.0f, 2.4f, 2.8f,  // outer rim: 40/48/56
-                1.2f, 1.4f, 1.6f,  // lip: 40/48/56
-                1.2f, 1.4f, 1.6f,  // inner shadow: 40/48/56
-                1.1f, 1.6f, 2.0f   // indicator: 40/48/56
-            };
+            return StrokeLadder::ringStrokeOuter (scaleKey);
         }
 
-        inline float getOuterRimThickness (float radius)
+        inline float getLipThickness (float scaleKey)
         {
-            const auto ladder = getStrokeWidths();
-            if (radius <= 20.0f)      return ladder.outerRim40;
-            else if (radius <= 24.0f) return ladder.outerRim48;
-            else                      return ladder.outerRim56;
+            return StrokeLadder::ringStrokeLip (scaleKey);
         }
 
-        inline float getLipThickness (float radius)
+        inline float getInnerShadowThickness (float scaleKey)
         {
-            const auto ladder = getStrokeWidths();
-            if (radius <= 20.0f)      return ladder.lip40;
-            else if (radius <= 24.0f) return ladder.lip48;
-            else                      return ladder.lip56;
+            return StrokeLadder::ringStrokeInner (scaleKey);
         }
 
-        inline float getInnerShadowThickness (float radius)
+        inline float getIndicatorThickness (float scaleKey)
         {
-            const auto ladder = getStrokeWidths();
-            if (radius <= 20.0f)      return ladder.innerShadow40;
-            else if (radius <= 24.0f) return ladder.innerShadow48;
-            else                      return ladder.innerShadow56;
+            return StrokeLadder::indicatorStroke (scaleKey);
         }
 
-        inline float getIndicatorThickness (float radius)
+        inline float getIndicatorUnderStrokeThickness (float scaleKey)
         {
-            const auto ladder = getStrokeWidths();
-            if (radius <= 20.0f)      return ladder.indicator40;
-            else if (radius <= 24.0f) return ladder.indicator48;
-            else                      return ladder.indicator56;
-        }
-
-        inline float getIndicatorUnderStrokeThickness (float indicatorThickness)
-        {
-            return indicatorThickness + 0.4f;
+            return StrokeLadder::indicatorUnderStroke (scaleKey);
         }
     }
 }
