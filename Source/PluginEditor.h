@@ -233,5 +233,23 @@ private:
 
     std::unique_ptr<CompassLookAndFeel> lookAndFeel;
 
+    // ---------------- Scale Management (Phase 1) ----------------
+    float getPhysicalScaleLastPaint() const { return physicalScaleLastPaint; }
+    float getScaleKeyActive() const { return scaleKeyActive; }
+
+    // Scale state machine (stability + rate limiting)
+    float physicalScaleLastPaint = 1.0f;
+    float scaleKeyActive = 1.0f;
+    
+    // Stability window: track last N scaleKey values
+    static constexpr int stabilityWindowSize = 3;
+    float scaleKeyHistory[stabilityWindowSize] = { 1.0f, 1.0f, 1.0f };
+    int scaleKeyHistoryIndex = 0;
+    int scaleKeyHistoryCount = 0;  // How many valid entries we have
+    
+    // Rate limiting
+    juce::int64 lastScaleKeyChangeTime = 0;
+    static constexpr juce::int64 rateLimitMs = 250;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CompassEQAudioProcessorEditor)
 };

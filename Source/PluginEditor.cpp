@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "Phase1Spec.h"
+#include "UIStyle.h"
 
 static constexpr int kEditorW = 760;
 static constexpr int kEditorH = 420;
@@ -29,10 +30,10 @@ namespace
 
         const auto rf = r.toFloat();
 
-        g.setColour (juce::Colours::white.withAlpha (s.fillA));
+        g.setColour (UIStyle::Colors::foreground.withAlpha (s.fillA));
         g.fillRoundedRectangle (rf, s.radius);
 
-        g.setColour (juce::Colours::white.withAlpha (s.strokeA));
+        g.setColour (UIStyle::Colors::foreground.withAlpha (s.strokeA));
         g.drawRoundedRectangle (rf, s.radius, s.strokeW);
     }
 
@@ -69,92 +70,58 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider (
     const auto cy = std::round (centre.y);
     const auto r = radius;
 
-    // Scale-dependent thicknesses (hardware silhouette - stronger for visibility)
-    const auto rimPx = juce::jlimit (1.5f, 3.0f, std::round (r * 0.08f));
-    const auto lipPx = juce::jlimit (1.0f, 2.5f, std::round (r * 0.05f));
-    const auto innerShadowPx = juce::jlimit (1.0f, 2.0f, std::round (r * 0.04f));
-
-    // Base matte charcoal body
-    const auto bodyColour = juce::Colour::fromRGB (40, 40, 40);
-    g.setColour (bodyColour);
+    // A) Base matte body (flat, no gradient hotspot)
+    g.setColour (UIStyle::Colors::knobBody);
     g.fillEllipse (cx - r, cy - r, r * 2.0f, r * 2.0f);
 
-    // Inner cavity depth (vignette falloff - darker at edges, slightly lighter at center)
-    juce::ColourGradient cavityGradient (juce::Colour::fromRGB (35, 35, 35), cx, cy,
-                                         juce::Colour::fromRGB (42, 42, 42), cx, cy, false);
-    cavityGradient.addColour (0.3f, juce::Colour::fromRGB (38, 38, 38));
-    cavityGradient.addColour (0.7f, juce::Colour::fromRGB (40, 40, 40));
-    g.setGradientFill (cavityGradient);
-    g.fillEllipse (cx - r * 0.95f, cy - r * 0.95f, r * 1.9f, r * 1.9f);
-
-    // Face shading: soft, wide, top-biased highlight (reduced hotspot)
-    const auto highlightCy = cy - r * 0.3f;
-    juce::ColourGradient highlightGradient (juce::Colours::white.withAlpha (0.06f), cx, highlightCy,
-                                           juce::Colours::transparentWhite, cx, cy + r * 0.4f, false);
-    highlightGradient.addColour (0.3f, juce::Colours::white.withAlpha (0.04f));
-    highlightGradient.addColour (0.7f, juce::Colours::white.withAlpha (0.02f));
-    g.setGradientFill (highlightGradient);
-    g.fillEllipse (cx - r * 0.85f, cy - r * 0.85f, r * 1.7f, r * 1.7f);
-
-    // Bottom occlusion: vertical gradient overlay INSIDE knob (depth cue)
+    // B) Bottom occlusion (depth cue - clipped)
     g.saveState();
     juce::Path knobClip;
     knobClip.addEllipse (cx - r, cy - r, r * 2.0f, r * 2.0f);
     g.reduceClipRegion (knobClip);
     
-    juce::ColourGradient bottomOcclusion (juce::Colours::transparentBlack, cx, cy - r * 0.5f,
-                                         juce::Colour::fromRGB (20, 20, 20).withAlpha (0.6f), cx, cy + r * 0.7f, false);
-    bottomOcclusion.addColour (0.5f, juce::Colour::fromRGB (25, 25, 25).withAlpha (0.35f));
+    juce::ColourGradient bottomOcclusion (juce::Colours::transparentBlack, cx, cy + r * UIStyle::Knob::occlusionTopOffset,
+                                         UIStyle::Colors::knobOcclusion.withAlpha (UIStyle::Knob::occlusionAlpha), cx, cy + r * UIStyle::Knob::occlusionBottomOffset, false);
     g.setGradientFill (bottomOcclusion);
     g.fillEllipse (cx - r, cy - r, r * 2.0f, r * 2.0f);
     g.restoreState();
 
-    // Secondary subtle radial gradient (micro-texture illusion - breaks perfect flatness)
-    const auto textureCx = cx + r * 0.15f;
-    const auto textureCy = cy - r * 0.2f;
-    juce::ColourGradient textureGradient (juce::Colours::white.withAlpha (0.025f), textureCx, textureCy,
-                                          juce::Colours::transparentWhite, cx, cy, false);
-    g.setGradientFill (textureGradient);
-    g.fillEllipse (cx - r * 0.6f, cy - r * 0.6f, r * 1.2f, r * 1.2f);
+    // C) Hardware rings (readability)
+    // 1. Outer silhouette ring
+    const auto outerRimThickness = UIStyle::Knob::getOuterRimThickness (r);
+    g.setColour (UIStyle::Colors::knobOuterRim.withAlpha (UIStyle::Knob::outerRimAlpha));
+    g.drawEllipse (cx - r, cy - r, r * 2.0f, r * 2.0f, outerRimThickness);
 
-    // A) Strong 3 concentric rings for clear 3D separation
-    // 1) Outer rim: darker stroke (stronger alpha for visibility)
-    g.setColour (juce::Colours::black.withAlpha (0.55f));
-    g.drawEllipse (cx - r, cy - r, r * 2.0f, r * 2.0f, rimPx);
+    // 2. Lip highlight ring (just inside silhouette)
+    const auto lipRadius = r * UIStyle::Knob::lipRadiusMultiplier;
+    const auto lipThickness = UIStyle::Knob::getLipThickness (r);
+    g.setColour (UIStyle::Colors::knobLipHighlight.withAlpha (UIStyle::Knob::lipHighlightAlpha));
+    g.drawEllipse (cx - lipRadius, cy - lipRadius, lipRadius * 2.0f, lipRadius * 2.0f, lipThickness);
 
-    // 2) Lip highlight ring just inside rim: lighter stroke (thin)
-    const auto lipRadius = r * 0.96f;
-    g.setColour (juce::Colour::fromRGB (55, 55, 55).withAlpha (0.5f));
-    g.drawEllipse (cx - lipRadius, cy - lipRadius, lipRadius * 2.0f, lipRadius * 2.0f, lipPx);
+    // 3. Inner shadow ring
+    const auto innerShadowRadius = r * UIStyle::Knob::innerShadowRadiusMultiplier;
+    const auto innerShadowThickness = UIStyle::Knob::getInnerShadowThickness (r);
+    g.setColour (UIStyle::Colors::knobInnerShadow.withAlpha (UIStyle::Knob::innerShadowAlpha));
+    g.drawEllipse (cx - innerShadowRadius, cy - innerShadowRadius, innerShadowRadius * 2.0f, innerShadowRadius * 2.0f, innerShadowThickness);
 
-    // 3) Inner shadow ring: slightly darker than face (thin)
-    const auto innerShadowRadius = r * 0.92f;
-    g.setColour (juce::Colour::fromRGB (32, 32, 32).withAlpha (0.45f));
-    g.drawEllipse (cx - innerShadowRadius, cy - innerShadowRadius, innerShadowRadius * 2.0f, innerShadowRadius * 2.0f, innerShadowPx);
-
-    // Indicator line: shorter (more inset), less bright, subtle dark under-stroke
+    // D) Indicator line
     const auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
-    const auto lineLength = r * 0.50f;  // Further inset from rim (was 0.57f)
-    
-    // Thickness scaling: 40px -> 1.1px, 48px -> 1.6px, 56px -> 2.0px
-    float lineThickness;
-    if (r <= 20.0f)      lineThickness = 1.1f;  // 40px knob
-    else if (r <= 24.0f) lineThickness = 1.6f;  // 48px knob
-    else                 lineThickness = 2.0f;  // 56px knob
+    const auto lineLength = r * UIStyle::Knob::indicatorLengthMultiplier;
+    const auto lineThickness = UIStyle::Knob::getIndicatorThickness (r);
 
-    const auto lineStart = juce::Point<float> (cx, cy).getPointOnCircumference (r * 0.25f, angle);
+    const auto lineStart = juce::Point<float> (cx, cy).getPointOnCircumference (r * UIStyle::Knob::indicatorStartRadiusMultiplier, angle);
     const auto lineEnd = juce::Point<float> (cx, cy).getPointOnCircumference (lineLength, angle);
 
-    // Very subtle dark under-stroke (thin) for contrast
-    const auto underStrokeThickness = juce::jmax (1.0f, lineThickness * 0.7f);
-    g.setColour (juce::Colour::fromRGB (25, 25, 25).withAlpha (0.6f));
+    // Under-stroke (slightly thicker than main line, lower alpha)
+    const auto underStrokeThickness = UIStyle::Knob::getIndicatorUnderStrokeThickness (lineThickness);
+    g.setColour (UIStyle::Colors::knobIndicatorUnderStroke.withAlpha (UIStyle::Knob::indicatorUnderStrokeAlpha));
     juce::Path underStroke;
     underStroke.startNewSubPath (lineStart);
     underStroke.lineTo (lineEnd);
     g.strokePath (underStroke, juce::PathStrokeType (underStrokeThickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-    // Main indicator line (slightly off-white, less LED-like, rounded caps)
-    g.setColour (juce::Colour::fromRGB (240, 240, 240));  // Slightly less bright than pure white
+    // Main indicator line
+    g.setColour (UIStyle::Colors::knobIndicator);
     juce::Path indicatorPath;
     indicatorPath.startNewSubPath (lineStart);
     indicatorPath.lineTo (lineEnd);
@@ -630,29 +597,91 @@ void CompassEQAudioProcessorEditor::configureKnob (juce::Slider& s)
 
 void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
 {
+    // ===== Phase 1: Scale Source of Truth + scaleKey policy =====
+    // Derive physical pixel scale from active editor paint graphics context
+    const auto physicalScale = (float) g.getInternalContext().getPhysicalPixelScaleFactor();
+    physicalScaleLastPaint = physicalScale;
+    
+    // Compute rawKey = round(physicalScale * 100) / 100
+    const float rawKey = std::round (physicalScale * 100.0f) / 100.0f;
+    
+    // macOS snap-to-known-values (tolerance 0.02)
+    float scaleKey;
+    if (std::abs (rawKey - 2.00f) <= 0.02f)
+        scaleKey = 2.00f;
+    else if (std::abs (rawKey - 1.00f) <= 0.02f)
+        scaleKey = 1.00f;
+    else
+        scaleKey = rawKey;
+    
+    // Stability window: add to history
+    scaleKeyHistory[scaleKeyHistoryIndex] = scaleKey;
+    scaleKeyHistoryIndex = (scaleKeyHistoryIndex + 1) % stabilityWindowSize;
+    if (scaleKeyHistoryCount < stabilityWindowSize)
+        scaleKeyHistoryCount++;
+    
+    // Check if all last N values match (stability requirement)
+    // Note: scaleKeyHistoryIndex points to where NEXT value will go
+    bool isStable = (scaleKeyHistoryCount >= stabilityWindowSize);
+    if (isStable)
+    {
+        // Get the most recent value (the one we just added, which is at index-1)
+        const int mostRecentIdx = (scaleKeyHistoryIndex - 1 + stabilityWindowSize) % stabilityWindowSize;
+        const float mostRecent = scaleKeyHistory[mostRecentIdx];
+        
+        // Check that the last N values (in chronological order) all match
+        for (int i = 0; i < stabilityWindowSize; ++i)
+        {
+            const int idx = (mostRecentIdx - i + stabilityWindowSize) % stabilityWindowSize;
+            if (std::abs (scaleKeyHistory[idx] - mostRecent) > 0.001f)
+            {
+                isStable = false;
+                break;
+            }
+        }
+    }
+    
+    // Rate limiting: check if enough time has passed since last change
+    const auto currentTime = juce::Time::currentTimeMillis();
+    const bool rateLimitOk = (currentTime - lastScaleKeyChangeTime) >= rateLimitMs;
+    
+    // Update active scaleKey if stable and rate limit allows
+    if (isStable && rateLimitOk)
+    {
+        // All values are the same if stable, use the most recent
+        const int mostRecentIdx = (scaleKeyHistoryIndex - 1 + stabilityWindowSize) % stabilityWindowSize;
+        const float candidateKey = scaleKeyHistory[mostRecentIdx];
+        if (std::abs (candidateKey - scaleKeyActive) > 0.001f)
+        {
+            scaleKeyActive = candidateKey;
+            lastScaleKeyChangeTime = currentTime;
+        }
+    }
+    // During transition: continue using last-valid active scaleKey (already set)
+    
     // ===== Phase 5.0 — Asset-Ready Paint Layer (vector-only, no images) =====
     // Only paint changes. Layout is frozen. All drawing driven by assetSlots.
 
     // ===== PH9.4 — Paint hygiene ladder (no layout change) =====
-    constexpr float kTitleA   = 0.90f;
-    constexpr float kHeaderA  = 0.75f;
-    constexpr float kMicroA   = 0.45f;
-    constexpr float kTickA    = 0.30f;
+    constexpr float kTitleA   = UIStyle::TextAlpha::title;
+    constexpr float kHeaderA  = UIStyle::TextAlpha::header;
+    constexpr float kMicroA   = UIStyle::TextAlpha::micro;
+    constexpr float kTickA    = UIStyle::TextAlpha::tick;
 
     const auto editor = getLocalBounds();
-    g.fillAll (juce::Colours::black);
+    g.fillAll (UIStyle::Colors::background);
 
     // ---- Global border (subtle) ----
-    g.setColour (juce::Colours::white.withAlpha (0.12f));
+    g.setColour (UIStyle::Colors::foreground.withAlpha (UIStyle::UIAlpha::globalBorder));
     g.drawRect (editor, 1);
 
     // ---- Plate styles (alpha ladder) ----
     // Keep everything subtle—this is a future PNG drop-in map.
-    PlateStyle bgPlate     { 0.015f, 0.07f, 1.0f, 10.0f, 0 };
-    PlateStyle headerPlate { 0.030f, 0.10f, 1.0f, 10.0f, 0 };
-    PlateStyle zonePlate   { 0.022f, 0.10f, 1.0f,  8.0f, 0 };
-    PlateStyle subPlate    { 0.018f, 0.10f, 1.0f,  6.0f, 0 };
-    PlateStyle wellPlate   { 0.060f, 0.16f, 1.0f,  4.0f, 0 };
+    PlateStyle bgPlate     { UIStyle::Plate::FillAlpha::background, UIStyle::Plate::StrokeAlpha::background, UIStyle::Plate::strokeWidth, UIStyle::Plate::Radius::background, 0 };
+    PlateStyle headerPlate { UIStyle::Plate::FillAlpha::header, UIStyle::Plate::StrokeAlpha::header, UIStyle::Plate::strokeWidth, UIStyle::Plate::Radius::header, 0 };
+    PlateStyle zonePlate   { UIStyle::Plate::FillAlpha::zone, UIStyle::Plate::StrokeAlpha::zone, UIStyle::Plate::strokeWidth, UIStyle::Plate::Radius::zone, 0 };
+    PlateStyle subPlate    { UIStyle::Plate::FillAlpha::sub, UIStyle::Plate::StrokeAlpha::sub, UIStyle::Plate::strokeWidth, UIStyle::Plate::Radius::sub, 0 };
+    PlateStyle wellPlate   { UIStyle::Plate::FillAlpha::well, UIStyle::Plate::StrokeAlpha::well, UIStyle::Plate::strokeWidth, UIStyle::Plate::Radius::well, 0 };
 
     // ---- Major plates (derived from assetSlots zones) ----
     const int inset = 16; // paint-only breathing room (not layout)
@@ -680,7 +709,7 @@ void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
 
         // ---- Optional micro separators aligned to plate edges (no new UI elements) ----
         {
-            g.setColour (juce::Colours::white.withAlpha (0.06f));
+            g.setColour (UIStyle::Colors::foreground.withAlpha (UIStyle::UIAlpha::microSeparator));
 
             // vertical edges of the bands plate (helps future asset snapping)
             if (! bands.isEmpty())
@@ -726,14 +755,14 @@ void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
 
     auto drawHeaderAbove = [&g, &headerFont, kHeaderA] (const char* txt, juce::Rectangle<int> b, int yOffset)
     {
-        g.setColour (juce::Colours::white.withAlpha (kHeaderA));
+        g.setColour (UIStyle::Colors::foreground.withAlpha (kHeaderA));
         g.setFont (headerFont);
         g.drawFittedText (txt, b.getX(), b.getY() + yOffset, b.getWidth(), 12, juce::Justification::centred, 1);
     };
 
     auto drawLegendBelow = [&g, &microFont, kMicroA] (const char* txt, juce::Rectangle<int> b, int yOffset)
     {
-        g.setColour (juce::Colours::white.withAlpha (kMicroA));
+        g.setColour (UIStyle::Colors::foreground.withAlpha (kMicroA));
         g.setFont (microFont);
         g.drawFittedText (txt, b.getX(), b.getBottom() + yOffset, b.getWidth(), 12, juce::Justification::centred, 1);
     };
@@ -743,19 +772,19 @@ void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
         const int cx = b.getCentreX();
         const int y0 = b.getY() + yOffset;
         const int y1 = y0 + 6;
-        g.setColour (juce::Colours::white.withAlpha (kTickA));
+        g.setColour (UIStyle::Colors::foreground.withAlpha (kTickA));
         g.drawLine ((float) cx, (float) y0, (float) cx, (float) y1, 1.0f);
     };
 
     auto drawColLabel = [&g, &headerFont, kHeaderA] (const char* txt, juce::Rectangle<int> columnBounds, int y)
     {
-        g.setColour (juce::Colours::white.withAlpha (kHeaderA));
+        g.setColour (UIStyle::Colors::foreground.withAlpha (kHeaderA));
         g.setFont (headerFont);
         g.drawFittedText (txt, columnBounds.getX(), y, columnBounds.getWidth(), 14, juce::Justification::centred, 1);
     };
 
     // Title (centered inside header plate)
-    g.setColour (juce::Colours::white.withAlpha (kTitleA));
+    g.setColour (UIStyle::Colors::foreground.withAlpha (kTitleA));
     g.setFont (titleFont);
     if (! headerFW.isEmpty())
         g.drawText ("COMPASS EQ", headerFW.withTrimmedTop (6).withHeight (24), juce::Justification::centred, false);
@@ -820,7 +849,7 @@ void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
     {
         auto draw = [&g] (juce::Rectangle<int> r)
         {
-            g.setColour (juce::Colours::white.withAlpha (0.20f));
+            g.setColour (UIStyle::Colors::foreground.withAlpha (UIStyle::UIAlpha::debugOverlay));
             g.drawRect (r, 1);
         };
 
@@ -841,36 +870,36 @@ void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
         auto box = [&g] (juce::Rectangle<int> r, float a)
         {
             if (r.isEmpty()) return;
-            g.setColour (juce::Colours::white.withAlpha (a));
+            g.setColour (UIStyle::Colors::foreground.withAlpha (a));
             g.drawRect (r, 1);
         };
 
         // Asset slots
-        box (assetSlots.headerZone, 0.20f);
-        box (assetSlots.filtersZone, 0.20f);
-        box (assetSlots.bandsZone, 0.20f);
-        box (assetSlots.trimZone,   0.20f);
+        box (assetSlots.headerZone, UIStyle::UIAlpha::auditOverlay);
+        box (assetSlots.filtersZone, UIStyle::UIAlpha::auditOverlay);
+        box (assetSlots.bandsZone, UIStyle::UIAlpha::auditOverlay);
+        box (assetSlots.trimZone, UIStyle::UIAlpha::auditOverlay);
 
-        box (assetSlots.colLF,  0.20f);
-        box (assetSlots.colLMF, 0.20f);
-        box (assetSlots.colHMF, 0.20f);
-        box (assetSlots.colHF,  0.20f);
+        box (assetSlots.colLF, UIStyle::UIAlpha::auditOverlay);
+        box (assetSlots.colLMF, UIStyle::UIAlpha::auditOverlay);
+        box (assetSlots.colHMF, UIStyle::UIAlpha::auditOverlay);
+        box (assetSlots.colHF, UIStyle::UIAlpha::auditOverlay);
 
         // Knob bounds (exact control bounds)
-        box (lfFreq.getBounds(),  0.14f); box (lfGain.getBounds(),  0.14f);
-        box (lmfFreq.getBounds(), 0.14f); box (lmfGain.getBounds(), 0.14f); box (lmfQ.getBounds(), 0.14f);
-        box (hmfFreq.getBounds(), 0.14f); box (hmfGain.getBounds(), 0.14f); box (hmfQ.getBounds(), 0.14f);
-        box (hfFreq.getBounds(),  0.14f); box (hfGain.getBounds(),  0.14f);
+        box (lfFreq.getBounds(), UIStyle::UIAlpha::auditOverlayKnob); box (lfGain.getBounds(), UIStyle::UIAlpha::auditOverlayKnob);
+        box (lmfFreq.getBounds(), UIStyle::UIAlpha::auditOverlayKnob); box (lmfGain.getBounds(), UIStyle::UIAlpha::auditOverlayKnob); box (lmfQ.getBounds(), UIStyle::UIAlpha::auditOverlayKnob);
+        box (hmfFreq.getBounds(), UIStyle::UIAlpha::auditOverlayKnob); box (hmfGain.getBounds(), UIStyle::UIAlpha::auditOverlayKnob); box (hmfQ.getBounds(), UIStyle::UIAlpha::auditOverlayKnob);
+        box (hfFreq.getBounds(), UIStyle::UIAlpha::auditOverlayKnob); box (hfGain.getBounds(), UIStyle::UIAlpha::auditOverlayKnob);
 
-        box (hpfFreq.getBounds(), 0.14f);
-        box (lpfFreq.getBounds(), 0.14f);
+        box (hpfFreq.getBounds(), UIStyle::UIAlpha::auditOverlayKnob);
+        box (lpfFreq.getBounds(), UIStyle::UIAlpha::auditOverlayKnob);
 
-        box (inTrim.getBounds(),  0.14f);
-        box (outTrim.getBounds(), 0.14f);
+        box (inTrim.getBounds(), UIStyle::UIAlpha::auditOverlayKnob);
+        box (outTrim.getBounds(), UIStyle::UIAlpha::auditOverlayKnob);
 
         // Meters
-        box (inputMeter.getBounds(),  0.18f);
-        box (outputMeter.getBounds(), 0.18f);
+        box (inputMeter.getBounds(), UIStyle::UIAlpha::auditOverlayMeter);
+        box (outputMeter.getBounds(), UIStyle::UIAlpha::auditOverlayMeter);
     }
 }
 
