@@ -595,70 +595,8 @@ void CompassEQAudioProcessorEditor::configureKnob (juce::Slider& s)
     s.setLookAndFeel (lookAndFeel.get());
 }
 
-void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
+void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g)
 {
-    // ===== Phase 1: Scale Source of Truth + scaleKey policy =====
-    // Derive physical pixel scale from active editor paint graphics context
-    const auto physicalScale = (float) g.getInternalContext().getPhysicalPixelScaleFactor();
-    physicalScaleLastPaint = physicalScale;
-    
-    // Compute rawKey = round(physicalScale * 100) / 100
-    const float rawKey = std::round (physicalScale * 100.0f) / 100.0f;
-    
-    // macOS snap-to-known-values (tolerance 0.02)
-    float scaleKey;
-    if (std::abs (rawKey - 2.00f) <= 0.02f)
-        scaleKey = 2.00f;
-    else if (std::abs (rawKey - 1.00f) <= 0.02f)
-        scaleKey = 1.00f;
-    else
-        scaleKey = rawKey;
-    
-    // Stability window: add to history
-    scaleKeyHistory[scaleKeyHistoryIndex] = scaleKey;
-    scaleKeyHistoryIndex = (scaleKeyHistoryIndex + 1) % stabilityWindowSize;
-    if (scaleKeyHistoryCount < stabilityWindowSize)
-        scaleKeyHistoryCount++;
-    
-    // Check if all last N values match (stability requirement)
-    // Note: scaleKeyHistoryIndex points to where NEXT value will go
-    bool isStable = (scaleKeyHistoryCount >= stabilityWindowSize);
-    if (isStable)
-    {
-        // Get the most recent value (the one we just added, which is at index-1)
-        const int mostRecentIdx = (scaleKeyHistoryIndex - 1 + stabilityWindowSize) % stabilityWindowSize;
-        const float mostRecent = scaleKeyHistory[mostRecentIdx];
-        
-        // Check that the last N values (in chronological order) all match
-        for (int i = 0; i < stabilityWindowSize; ++i)
-        {
-            const int idx = (mostRecentIdx - i + stabilityWindowSize) % stabilityWindowSize;
-            if (std::abs (scaleKeyHistory[idx] - mostRecent) > 0.001f)
-            {
-                isStable = false;
-                break;
-            }
-        }
-    }
-    
-    // Rate limiting: check if enough time has passed since last change
-    const auto currentTime = juce::Time::currentTimeMillis();
-    const bool rateLimitOk = (currentTime - lastScaleKeyChangeTime) >= rateLimitMs;
-    
-    // Update active scaleKey if stable and rate limit allows
-    if (isStable && rateLimitOk)
-    {
-        // All values are the same if stable, use the most recent
-        const int mostRecentIdx = (scaleKeyHistoryIndex - 1 + stabilityWindowSize) % stabilityWindowSize;
-        const float candidateKey = scaleKeyHistory[mostRecentIdx];
-        if (std::abs (candidateKey - scaleKeyActive) > 0.001f)
-        {
-            scaleKeyActive = candidateKey;
-            lastScaleKeyChangeTime = currentTime;
-        }
-    }
-    // During transition: continue using last-valid active scaleKey (already set)
-    
     // ===== Phase 5.0 — Asset-Ready Paint Layer (vector-only, no images) =====
     // Only paint changes. Layout is frozen. All drawing driven by assetSlots.
 
@@ -903,6 +841,150 @@ void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
     }
 }
 
+void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
+{
+    // ===== Phase 1: Scale Source of Truth + scaleKey policy =====
+    // Derive physical pixel scale from active editor paint graphics context
+    const auto physicalScale = (float) g.getInternalContext().getPhysicalPixelScaleFactor();
+    physicalScaleLastPaint = physicalScale;
+    
+    // Compute rawKey = round(physicalScale * 100) / 100
+    const float rawKey = std::round (physicalScale * 100.0f) / 100.0f;
+    
+    // macOS snap-to-known-values (tolerance 0.02)
+    float scaleKey;
+    if (std::abs (rawKey - 2.00f) <= 0.02f)
+        scaleKey = 2.00f;
+    else if (std::abs (rawKey - 1.00f) <= 0.02f)
+        scaleKey = 1.00f;
+    else
+        scaleKey = rawKey;
+    
+    // Stability window: add to history
+    scaleKeyHistory[scaleKeyHistoryIndex] = scaleKey;
+    scaleKeyHistoryIndex = (scaleKeyHistoryIndex + 1) % stabilityWindowSize;
+    if (scaleKeyHistoryCount < stabilityWindowSize)
+        scaleKeyHistoryCount++;
+    
+    // Check if all last N values match (stability requirement)
+    // Note: scaleKeyHistoryIndex points to where NEXT value will go
+    bool isStable = (scaleKeyHistoryCount >= stabilityWindowSize);
+    if (isStable)
+    {
+        // Get the most recent value (the one we just added, which is at index-1)
+        const int mostRecentIdx = (scaleKeyHistoryIndex - 1 + stabilityWindowSize) % stabilityWindowSize;
+        const float mostRecent = scaleKeyHistory[mostRecentIdx];
+        
+        // Check that the last N values (in chronological order) all match
+        for (int i = 0; i < stabilityWindowSize; ++i)
+        {
+            const int idx = (mostRecentIdx - i + stabilityWindowSize) % stabilityWindowSize;
+            if (std::abs (scaleKeyHistory[idx] - mostRecent) > 0.001f)
+            {
+                isStable = false;
+                break;
+            }
+        }
+    }
+    
+    // Rate limiting: check if enough time has passed since last change
+    const auto currentTime = juce::Time::currentTimeMillis();
+    const bool rateLimitOk = (currentTime - lastScaleKeyChangeTime) >= rateLimitMs;
+    
+    // Update active scaleKey if stable and rate limit allows
+    if (isStable && rateLimitOk)
+    {
+        // All values are the same if stable, use the most recent
+        const int mostRecentIdx = (scaleKeyHistoryIndex - 1 + stabilityWindowSize) % stabilityWindowSize;
+        const float candidateKey = scaleKeyHistory[mostRecentIdx];
+        if (std::abs (candidateKey - scaleKeyActive) > 0.001f)
+        {
+            scaleKeyActive = candidateKey;
+            lastScaleKeyChangeTime = currentTime;
+        }
+    }
+    // During transition: continue using last-valid active scaleKey (already set)
+    
+    // ===== Phase 2: Static Layer Cache =====
+    const float sk = getScaleKeyActive();
+    const float physical = juce::jmax (1.0f, getPhysicalScaleLastPaint());
+    const int w = getWidth();
+    const int h = getHeight();
+    const int pw = juce::roundToInt ((double) w * (double) physical);
+    const int ph = juce::roundToInt ((double) h * (double) physical);
+    
+    // Check if cache is valid and matches current scaleKey and size
+    const bool cacheValid = staticCache.valid() 
+                         && std::abs (staticCache.scaleKey - sk) < 0.001f
+                         && staticCache.image.getWidth() == pw
+                         && staticCache.image.getHeight() == ph;
+    
+    if (cacheValid)
+    {
+        // Draw cached image with transform back to logical coords
+        g.drawImageTransformed (staticCache.image, juce::AffineTransform::scale (1.0f / physical));
+    }
+    else
+    {
+        // Fallback: draw uncached
+        renderStaticLayer (g);
+        
+        // Mark dirty and trigger async rebuild (outside paint) - prevent spam
+        staticCacheDirty.store (true, std::memory_order_release);
+
+        if (! staticCacheRebuildPending.exchange (true, std::memory_order_acq_rel))
+            triggerAsyncUpdate();
+    }
+}
+
+void CompassEQAudioProcessorEditor::handleAsyncUpdate()
+{
+    staticCacheRebuildPending.store (false, std::memory_order_release);
+    
+    jassert (juce::MessageManager::getInstance()->isThisTheMessageThread());
+    
+    // Rebuild cache only if visible and bounds are valid
+    if (! isVisible() || getBounds().isEmpty())
+        return;
+    
+    const int w = getWidth();
+    const int h = getHeight();
+    if (w <= 0 || h <= 0)
+        return;
+    
+    // Get physical scale (may be 0 on first paint; clamp >= 1)
+    const double physical = juce::jmax (1.0, (double) getPhysicalScaleLastPaint());
+    const int pw = juce::roundToInt ((double) w * physical);
+    const int ph = juce::roundToInt ((double) h * physical);
+    
+    if (pw <= 0 || ph <= 0)
+        return;
+    
+    const float sk = getScaleKeyActive();
+    
+    // Rebuild cache ONLY if dirty OR cache.scaleKey != sk OR image size mismatch
+    if (! staticCacheDirty.load (std::memory_order_acquire)
+        && std::abs (staticCache.scaleKey - sk) < 0.001f
+        && staticCache.valid()
+        && staticCache.image.getWidth() == pw
+        && staticCache.image.getHeight() == ph)
+        return;
+    
+    // Create image at physical pixel size
+    juce::Image img (juce::Image::ARGB, pw, ph, true);
+    juce::Graphics cg (img);
+    cg.addTransform (juce::AffineTransform::scale ((float) physical));
+    renderStaticLayer (cg);
+    
+    // Update cache
+    staticCache.image = std::move (img);
+    staticCache.scaleKey = sk;
+    staticCacheDirty.store (false, std::memory_order_release);
+    
+    // Trigger repaint to use new cache
+    repaint();
+}
+
 void CompassEQAudioProcessorEditor::resized()
 {
     // ===== Layout Freeze Spec v0.1 (AUTHORITATIVE) =====
@@ -1119,4 +1201,10 @@ void CompassEQAudioProcessorEditor::resized()
         clamp (assetSlots.bandsZone);
         clamp (assetSlots.trimZone);
     }
+    
+    // ===== Phase 2: Invalidate cache on resize =====
+    staticCacheDirty.store (true, std::memory_order_release);
+
+    if (! staticCacheRebuildPending.exchange (true, std::memory_order_acq_rel))
+        triggerAsyncUpdate();
 }

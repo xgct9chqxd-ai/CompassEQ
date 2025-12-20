@@ -4,7 +4,8 @@
 #include <functional>
 #include "PluginProcessor.h"
 
-class CompassEQAudioProcessorEditor final : public juce::AudioProcessorEditor
+class CompassEQAudioProcessorEditor final : public juce::AudioProcessorEditor,
+                                            private juce::AsyncUpdater
 {
 public:
     explicit CompassEQAudioProcessorEditor (CompassEQAudioProcessor&);
@@ -14,6 +15,8 @@ public:
     void resized() override;
 
 private:
+    void handleAsyncUpdate() override;
+    void renderStaticLayer (juce::Graphics& g);
     using APVTS = juce::AudioProcessorValueTreeState;
     using SliderAttachment = APVTS::SliderAttachment;
     using ButtonAttachment = APVTS::ButtonAttachment;
@@ -250,6 +253,19 @@ private:
     // Rate limiting
     juce::int64 lastScaleKeyChangeTime = 0;
     static constexpr juce::int64 rateLimitMs = 250;
+
+    // ---------------- Static Layer Cache (Phase 2) ----------------
+    struct StaticLayerCache
+    {
+        float scaleKey = 0.0f;
+        juce::Image image; // ARGB
+        bool valid() const { return image.isValid(); }
+        void clear() { image = {}; scaleKey = 0.0f; }
+    };
+
+    StaticLayerCache staticCache;
+    std::atomic<bool> staticCacheDirty { true };
+    std::atomic<bool> staticCacheRebuildPending { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CompassEQAudioProcessorEditor)
 };
