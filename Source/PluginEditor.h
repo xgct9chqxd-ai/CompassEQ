@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include <functional>
 #include "PluginProcessor.h"
+#include "UIStyle.h"
 
 class CompassEQAudioProcessorEditor final : public juce::AudioProcessorEditor,
                                             private juce::AsyncUpdater
@@ -16,7 +17,7 @@ public:
 
 private:
     void handleAsyncUpdate() override;
-    void renderStaticLayer (juce::Graphics& g);
+    void renderStaticLayer (juce::Graphics& g, float scaleKey, float physicalScale);
     using APVTS = juce::AudioProcessorValueTreeState;
     using SliderAttachment = APVTS::SliderAttachment;
     using ButtonAttachment = APVTS::ButtonAttachment;
@@ -25,8 +26,8 @@ private:
     class MeterComponent final : public juce::Component, private juce::Timer
     {
     public:
-        MeterComponent (CompassEQAudioProcessor& p, bool isInputMeter)
-            : proc (p), isInput (isInputMeter)
+        MeterComponent (CompassEQAudioProcessor& p, bool isInputMeter, CompassEQAudioProcessorEditor& e)
+            : proc (p), isInput (isInputMeter), editor (e)
         {
             startTimerHz (30);
         }
@@ -38,6 +39,18 @@ private:
 
         void paint (juce::Graphics& g) override
         {
+            // Phase 3C: PERFORMANCE BUDGET VERIFICATION CHECKLIST
+            // ✓ No std::vector growth, no std::string concat, no Path churn that allocates
+            // ✓ No Image reallocation in paint, no Gradient objects created per-frame without reuse/caching
+            // ✓ Fonts from ladders/tokens (not applicable, meter uses no text)
+            // ✓ All coordinates are stack-allocated floats/ints
+            // ✓ fillRoundedRectangle uses stack-allocated parameters only
+            // ✓ Meter repaint is isolated (Timer-based, repaint() only affects this component, never triggers editor-wide repaint)
+            
+            // Phase 2: Get scaleKey and physical scale for snapping
+            const float scaleKey = editor.getScaleKeyActive();
+            const float physicalScale = juce::jmax (1.0f, (float) g.getInternalContext().getPhysicalPixelScaleFactor());
+
             const auto b = getLocalBounds();
 
             // Hard occlude anything behind the meter lane
@@ -58,11 +71,15 @@ private:
             const float w = bounds.getWidth();
             const float h = bounds.getHeight();
 
-            // We FORCE full-height coverage.
-            constexpr float minGap = 1.0f;
+            // Phase 2: Use discrete ladder for min gap
+            const float minGap = UIStyle::MeterLadder::dotGapMin (scaleKey);
+
+            // Phase 2: Use discrete ladder for dot size range
+            const float dotSizeMin = UIStyle::MeterLadder::dotSizeMin (scaleKey);
+            const float dotSizeMax = UIStyle::MeterLadder::dotSizeMax (scaleKey);
 
             // Start with a diameter that fits width, then clamp by height constraint.
-            float dotD = juce::jlimit (2.5f, 7.0f, w - 4.0f);
+            float dotD = juce::jlimit (dotSizeMin, dotSizeMax, w - 4.0f);
 
             // If height can't accommodate with minGap, shrink dotD until it can.
             const float maxDotDByHeight = (h - minGap * (float) (kDots - 1)) / (float) kDots;
@@ -75,17 +92,18 @@ private:
             // Recompute dotD once more in case we clamped gap up.
             dotD = (h - gap * (float) (kDots - 1)) / (float) kDots;
 
-            const float x = bounds.getX() + (w - dotD) * 0.5f;
+            // Phase 2: Snap dot center X and spacing
+            const float x = UIStyle::Snap::snapPx (bounds.getX() + (w - dotD) * 0.5f, physicalScale);
 
-            // Anchor bottom dot to bottom edge
-            const float yBottom = bounds.getBottom() - dotD;
+            // Anchor bottom dot to bottom edge - Phase 2: Snap Y positions
+            const float yBottom = UIStyle::Snap::snapPx (bounds.getBottom() - dotD, physicalScale);
 
-            // “On” colors (lit)
+            // "On" colors (lit)
             const auto greenOn  = juce::Colour::fromRGB (60, 200, 110).withAlpha (0.90f);
             const auto yellowOn = juce::Colour::fromRGB (230, 200, 70).withAlpha (0.90f);
             const auto redOn    = juce::Colour::fromRGB (230, 70, 70).withAlpha (0.95f);
 
-            // “Off” colors (dim but still color-coded)
+            // "Off" colors (dim but still color-coded)
             const auto greenOff  = juce::Colour::fromRGB (60, 200, 110).withAlpha (0.14f);
             const auto yellowOff = juce::Colour::fromRGB (230, 200, 70).withAlpha (0.14f);
             const auto redOff    = juce::Colour::fromRGB (230, 70, 70).withAlpha (0.16f);
@@ -99,7 +117,8 @@ private:
                 else if (i < kGreen+kYellow) c = on ? yellowOn : yellowOff;
                 else                         c = on ? redOn    : redOff;
 
-                const float y = yBottom - (float) i * (dotD + gap);
+                // Phase 2: Snap dot Y position
+                const float y = UIStyle::Snap::snapPx (yBottom - (float) i * (dotD + gap), physicalScale);
 
                 g.setColour (c);
                 g.fillRoundedRectangle (juce::Rectangle<float> (x, y, dotD, dotD), dotD * 0.30f);
@@ -118,7 +137,8 @@ private:
         }
 
         CompassEQAudioProcessor& proc;
-        const bool isInput = true;
+        CompassEQAudioProcessorEditor& editor;
+        const bool isInput;
         float last01 = 0.0f;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MeterComponent)
@@ -229,9 +249,13 @@ private:
     class CompassLookAndFeel final : public juce::LookAndFeel_V4
     {
     public:
+        explicit CompassLookAndFeel (CompassEQAudioProcessorEditor& e) : editor (e) {}
+        
         void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
                                float sliderPos, float rotaryStartAngle, float rotaryEndAngle,
                                juce::Slider&) override;
+    private:
+        CompassEQAudioProcessorEditor& editor;
     };
 
     std::unique_ptr<CompassLookAndFeel> lookAndFeel;
@@ -254,13 +278,18 @@ private:
     juce::int64 lastScaleKeyChangeTime = 0;
     static constexpr juce::int64 rateLimitMs = 250;
 
-    // ---------------- Static Layer Cache (Phase 2) ----------------
+    // ---------------- Static Layer Cache (Phase 3A) ----------------
+    // Cache key = (scaleKeyActive, physical pixel size w*h)
+    // Cache rebuilds ONLY when: scaleKeyActive changes, resized() changes bounds, or explicit invalidation
+    // Cache rebuild happens via AsyncUpdater on UI thread, NEVER in paint()
     struct StaticLayerCache
     {
         float scaleKey = 0.0f;
+        int pixelW = 0;
+        int pixelH = 0;
         juce::Image image; // ARGB
-        bool valid() const { return image.isValid(); }
-        void clear() { image = {}; scaleKey = 0.0f; }
+        bool valid() const { return image.isValid() && pixelW > 0 && pixelH > 0; }
+        void clear() { image = {}; scaleKey = 0.0f; pixelW = 0; pixelH = 0; }
     };
 
     StaticLayerCache staticCache;
