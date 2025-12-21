@@ -158,26 +158,6 @@ private:
     {
     public:
         CompassSlider() = default;
-        
-        void mouseDown (const juce::MouseEvent& e) override
-        {
-            // Phase 6: Store original sensitivity, reduce if Shift held
-            originalSensitivity = getMouseDragSensitivity();
-            if (e.mods.isShiftDown())
-                setMouseDragSensitivity (originalSensitivity * 0.25f); // 4x finer
-            
-            juce::Slider::mouseDown (e);
-        }
-        
-        void mouseUp (const juce::MouseEvent& e) override
-        {
-            // Phase 6: Restore original sensitivity
-            setMouseDragSensitivity (originalSensitivity);
-            juce::Slider::mouseUp (e);
-        }
-        
-    private:
-        float originalSensitivity = 1.0f;
     };
 
     // ---------------- Phase 6: Fixed Value Readout (allocation-safe, fixed bounds) ----------------

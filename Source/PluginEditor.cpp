@@ -370,6 +370,9 @@ void CompassEQAudioProcessorEditor::configureKnob (CompassSlider& s, const char*
     // Phase 6: Disable mouse wheel
     s.setScrollWheelEnabled (false);
     
+    // Phase 6: Enable Shift fine adjust using JUCE velocity mode (~2.5x finer, responsive at slow speeds)
+    s.setVelocityModeParameters (0.4, 0, 0.0, true, juce::ModifierKeys::shiftModifier);
+    
     s.setLookAndFeel (lookAndFeel.get());
 }
 
