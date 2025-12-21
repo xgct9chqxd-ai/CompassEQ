@@ -102,8 +102,11 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider (
     knobClip.addEllipse (ellipseX, ellipseY, ellipseW, ellipseH);
     g.reduceClipRegion (knobClip);
     
-    juce::ColourGradient bottomOcclusion (juce::Colours::transparentBlack, cx, cy + r * UIStyle::Knob::occlusionTopOffset,
-                                         UIStyle::Colors::knobOcclusion.withAlpha (UIStyle::Knob::occlusionAlpha), cx, cy + r * UIStyle::Knob::occlusionBottomOffset, false);
+    // Phase 7: Snap gradient stop positions to prevent edge crawl
+    const auto occlusionTopY = UIStyle::Snap::snapPx (cy + r * UIStyle::Knob::occlusionTopOffset, physicalScale);
+    const auto occlusionBottomY = UIStyle::Snap::snapPx (cy + r * UIStyle::Knob::occlusionBottomOffset, physicalScale);
+    juce::ColourGradient bottomOcclusion (juce::Colours::transparentBlack, cx, occlusionTopY,
+                                         UIStyle::Colors::knobOcclusion.withAlpha (UIStyle::Knob::occlusionAlpha), cx, occlusionBottomY, false);
     g.setGradientFill (bottomOcclusion);
     g.fillEllipse (ellipseX, ellipseY, ellipseW, ellipseH);
     g.restoreState();

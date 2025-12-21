@@ -101,6 +101,10 @@ private:
             // Recompute dotD once more in case we clamped gap up.
             dotD = (h - gap * (float) (kDots - 1)) / (float) kDots;
 
+            // Phase 7: Snap dotD and gap to integer pixels for grid stability
+            dotD = UIStyle::Snap::snapPx (dotD, physicalScale);
+            gap = UIStyle::Snap::snapPx (gap, physicalScale);
+
             // Phase 2: Snap dot center X and spacing
             const float x = UIStyle::Snap::snapPx (bounds.getX() + (w - dotD) * 0.5f, physicalScale);
 
@@ -141,8 +145,11 @@ private:
         void timerCallback() override
         {
             const float v = isInput ? proc.getInputMeter01() : proc.getOutputMeter01();
-            last01 = juce::jlimit (0.0f, 1.0f, v);
-            repaint();
+            const float raw = juce::jlimit (0.0f, 1.0f, v);
+            // Phase 7: Exponential smoothing to reduce stepping (alpha = 0.3 for ~30Hz response)
+            last01 = last01 * 0.7f + raw * 0.3f;
+            // Phase 7: Repaint only this component's bounds (explicit, no editor-wide repaint)
+            repaint (getLocalBounds());
         }
 
         CompassEQAudioProcessor& proc;
@@ -347,6 +354,11 @@ private:
     // ---------------- Scale Management (Phase 1) ----------------
     float getPhysicalScaleLastPaint() const { return physicalScaleLastPaint; }
     float getScaleKeyActive() const { return scaleKeyActive; }
+    
+    // ===== Phase 8: Popups/Menus Scale Policy =====
+    // Any future PopupMenu / CallOutBox / tooltip MUST derive scale ONLY from the active editor's
+    // scale source of truth: Graphics physicalScale (via g.getInternalContext().getPhysicalPixelScaleFactor())
+    // → scaleKey (via getScaleKeyActive()). NO OS heuristics or independent scaling.
 
     // Scale state machine (stability + rate limiting)
     float physicalScaleLastPaint = 1.0f;
