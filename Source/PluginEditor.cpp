@@ -177,21 +177,27 @@ CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor (CompassEQAudioProc
     , inputMeter  (proc, true, *this)
     , outputMeter (proc, false, *this)
     , lookAndFeel (std::make_unique<CompassLookAndFeel>(*this))
+    , valueReadout (*this)
 {
     setResizable (false, false);
     setSize (kEditorW, kEditorH);
 
-    // Configure knobs (standard JUCE rotary; no popups/tooltips/overlays)
-    configureKnob (lfFreq); configureKnob (lfGain);
-    configureKnob (lmfFreq); configureKnob (lmfGain); configureKnob (lmfQ);
-    configureKnob (hmfFreq); configureKnob (hmfGain); configureKnob (hmfQ);
-    configureKnob (hfFreq);  configureKnob (hfGain);
-
-    configureKnob (hpfFreq);
-    configureKnob (lpfFreq);
-
-    configureKnob (inTrim);
-    configureKnob (outTrim);
+    // Phase 6: Configure knobs with parameter defaults for double-click reset
+    using namespace phase1;
+    configureKnob (lfFreq, LF_FREQUENCY_ID, Ranges::LF_FREQ_DEF);
+    configureKnob (lfGain, LF_GAIN_ID, Ranges::GAIN_DEF);
+    configureKnob (lmfFreq, LMF_FREQUENCY_ID, Ranges::LMF_FREQ_DEF);
+    configureKnob (lmfGain, LMF_GAIN_ID, Ranges::GAIN_DEF);
+    configureKnob (lmfQ, LMF_Q_ID, Ranges::Q_DEF);
+    configureKnob (hmfFreq, HMF_FREQUENCY_ID, Ranges::HMF_FREQ_DEF);
+    configureKnob (hmfGain, HMF_GAIN_ID, Ranges::GAIN_DEF);
+    configureKnob (hmfQ, HMF_Q_ID, Ranges::Q_DEF);
+    configureKnob (hfFreq, HF_FREQUENCY_ID, Ranges::HF_FREQ_DEF);
+    configureKnob (hfGain, HF_GAIN_ID, Ranges::GAIN_DEF);
+    configureKnob (hpfFreq, HPF_FREQUENCY_ID, Ranges::HPF_DEF);
+    configureKnob (lpfFreq, LPF_FREQUENCY_ID, Ranges::LPF_DEF);
+    configureKnob (inTrim, INPUT_TRIM_ID, Ranges::TRIM_DEF);
+    configureKnob (outTrim, OUTPUT_TRIM_ID, Ranges::TRIM_DEF);
 
     // Internal names (no extra UI elements)
     lfFreq.setName ("LF Frequency");  lfGain.setName ("LF Gain");
@@ -205,71 +211,59 @@ CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor (CompassEQAudioProc
     inTrim.setName ("Input Trim");
     outTrim.setName ("Output Trim");
 
-    // ===== Value popup wiring (refactored pattern) =====
-    // 1) Startup state: popup must be blank + hidden
-    valuePopup.setText ("", juce::dontSendNotification);
-    valuePopup.setVisible (false);
-
-    // Helper: show/update popup safely with positioning
-    auto showPopupFor = [this] (juce::Slider& s)
+    // ===== Phase 6: Fixed Value Readout wiring =====
+    // Readout is positioned in resized() with fixed bounds (no moving popup)
+    // Helper: update readout text (allocation-safe via ValueReadout)
+    auto updateReadout = [this] (CompassSlider& s)
     {
-        valuePopup.setText (popupTextFor (s), juce::dontSendNotification);
-        valuePopup.setVisible (true);
-        
-        auto r = s.getBounds();
-        const int y = juce::jmax (0, r.getY() - 22);
-        valuePopup.setBounds (r.getX(), y, r.getWidth(), 18);
-        valuePopup.repaint();
+        if (activeSlider == &s)
+        {
+            valueReadout.setValueText (popupTextFor (s));
+            valueReadout.show();
+        }
     };
 
-    auto hidePopup = [this]()
+    // Wire readout behavior for each slider
+    auto wireReadout = [this, updateReadout] (CompassSlider& s)
     {
-        valuePopup.setText ("", juce::dontSendNotification);
-        valuePopup.setVisible (false);
-        valuePopup.repaint();
-    };
-
-    // 2) Wire popup behavior for each slider
-    auto wirePopup = [this, showPopupFor, hidePopup] (juce::Slider& s)
-    {
-        s.onDragStart = [this, showPopupFor, &s]
+        s.onDragStart = [this, updateReadout, &s]
         {
             activeSlider = &s;
-            showPopupFor (s);
+            valueReadout.show();
+            updateReadout (s);
         };
 
-        s.onValueChange = [this, showPopupFor, &s]
+        s.onValueChange = [this, updateReadout, &s]
         {
-            // Only update while actively dragging
+            // Phase 6: Only update while actively dragging
             if (s.isMouseButtonDown())
             {
-                activeSlider = &s;
-                showPopupFor (s);
+                updateReadout (s);
             }
         };
 
-        s.onDragEnd = [this, hidePopup]
+        s.onDragEnd = [this]
         {
-            hidePopup();
+            valueReadout.hide();
             activeSlider = nullptr;
         };
     };
 
     // Apply to all sliders
-    wirePopup (lfFreq);
-    wirePopup (lfGain);
-    wirePopup (lmfFreq);
-    wirePopup (lmfGain);
-    wirePopup (lmfQ);
-    wirePopup (hmfFreq);
-    wirePopup (hmfGain);
-    wirePopup (hmfQ);
-    wirePopup (hfFreq);
-    wirePopup (hfGain);
-    wirePopup (hpfFreq);
-    wirePopup (lpfFreq);
-    wirePopup (inTrim);
-    wirePopup (outTrim);
+    wireReadout (lfFreq);
+    wireReadout (lfGain);
+    wireReadout (lmfFreq);
+    wireReadout (lmfGain);
+    wireReadout (lmfQ);
+    wireReadout (hmfFreq);
+    wireReadout (hmfGain);
+    wireReadout (hmfQ);
+    wireReadout (hfFreq);
+    wireReadout (hfGain);
+    wireReadout (hpfFreq);
+    wireReadout (lpfFreq);
+    wireReadout (inTrim);
+    wireReadout (outTrim);
 
 
     globalBypass.setName ("Global Bypass");
@@ -308,11 +302,10 @@ CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor (CompassEQAudioProc
     addAndMakeVisible (outputMeter);
 
     // Value popup label (ensure it exists, is non-interactive, and stays above)
-    addAndMakeVisible (valuePopup);
-    valuePopup.setJustificationType (juce::Justification::centred);
-    valuePopup.setInterceptsMouseClicks (false, false);
-    valuePopup.toFront (false);
-    // Popup startup state already set above (blank + hidden)
+    // Phase 6: Add fixed value readout (positioned in resized() with fixed bounds)
+    addAndMakeVisible (valueReadout);
+    valueReadout.toFront (false);
+    // Readout starts hidden (no text shown on plugin load)
 
     // Attachments using REAL IDs from Phase1Spec.h (namespace phase1)
     attLfFreq  = std::make_unique<SliderAttachment> (apvts, phase1::LF_FREQUENCY_ID,  lfFreq);
@@ -365,12 +358,18 @@ CompassEQAudioProcessorEditor::~CompassEQAudioProcessorEditor()
     // Phase 4: lookAndFeel unique_ptr will be destroyed here (after all components cleared)
 }
 
-void CompassEQAudioProcessorEditor::configureKnob (juce::Slider& s)
+void CompassEQAudioProcessorEditor::configureKnob (CompassSlider& s, const char* paramId, float defaultValue)
 {
     s.setSliderStyle (juce::Slider::RotaryVerticalDrag);
     s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     s.setPopupDisplayEnabled (false, false, this);
-    s.setDoubleClickReturnValue (false, 0.0);
+    
+    // Phase 6: Enable double-click reset to parameter default
+    s.setDoubleClickReturnValue (true, defaultValue);
+    
+    // Phase 6: Disable mouse wheel
+    s.setScrollWheelEnabled (false);
+    
     s.setLookAndFeel (lookAndFeel.get());
 }
 
@@ -1041,6 +1040,9 @@ void CompassEQAudioProcessorEditor::resized()
         clamp (assetSlots.bandsZone);
         clamp (assetSlots.trimZone);
     }
+    
+    // Phase 6: Position fixed value readout (fixed bounds, never changes)
+    valueReadout.setBounds (kReadoutX, kReadoutY, kReadoutW, kReadoutH);
     
     // ===== Phase 2: Invalidate cache on resize =====
     staticCacheDirty.store (true, std::memory_order_release);

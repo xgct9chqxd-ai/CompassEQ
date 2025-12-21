@@ -153,26 +153,121 @@ private:
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MeterComponent)
     };
 
+    // ---------------- Phase 6: CompassSlider (Shift fine adjust + double-click reset) ----------------
+    class CompassSlider final : public juce::Slider
+    {
+    public:
+        CompassSlider() = default;
+        
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            // Phase 6: Store original sensitivity, reduce if Shift held
+            originalSensitivity = getMouseDragSensitivity();
+            if (e.mods.isShiftDown())
+                setMouseDragSensitivity (originalSensitivity * 0.25f); // 4x finer
+            
+            juce::Slider::mouseDown (e);
+        }
+        
+        void mouseUp (const juce::MouseEvent& e) override
+        {
+            // Phase 6: Restore original sensitivity
+            setMouseDragSensitivity (originalSensitivity);
+            juce::Slider::mouseUp (e);
+        }
+        
+    private:
+        float originalSensitivity = 1.0f;
+    };
+
+    // ---------------- Phase 6: Fixed Value Readout (allocation-safe, fixed bounds) ----------------
+    class ValueReadout final : public juce::Component
+    {
+    public:
+        ValueReadout (CompassEQAudioProcessorEditor& e) : editor (e)
+        {
+            setInterceptsMouseClicks (false, false);
+            setVisible (false);
+        }
+        
+        void setValueText (const juce::String& text)
+        {
+            // Phase 6: Store in char buffer to avoid allocations
+            text.copyToUTF8 (textBuffer, sizeof (textBuffer));
+            textBuffer[sizeof (textBuffer) - 1] = '\0';
+            repaint();
+        }
+        
+        void show()
+        {
+            if (! isVisible())
+            {
+                setVisible (true);
+                repaint();
+            }
+        }
+        
+        void hide()
+        {
+            if (isVisible())
+            {
+                setVisible (false);
+                textBuffer[0] = '\0';
+                repaint();
+            }
+        }
+        
+        void paint (juce::Graphics& g) override
+        {
+            if (textBuffer[0] == '\0')
+                return;
+            
+            // Phase 6: Get scaleKey and physicalScale for snapping
+            const float scaleKey = editor.getScaleKeyActive();
+            const float physicalScale = juce::jmax (1.0f, (float) g.getInternalContext().getPhysicalPixelScaleFactor());
+            
+            // Phase 6: Use StringRef to avoid allocations, snap baseline Y
+            g.setColour (UIStyle::Colors::foreground.withAlpha (UIStyle::TextAlpha::header));
+            const auto& font = UIStyle::FontLadder::headerFont (scaleKey);
+            g.setFont (font);
+            
+            auto bounds = getLocalBounds();
+            const float snappedY = UIStyle::Snap::snapPx ((float) bounds.getY(), physicalScale);
+            bounds.setY ((int) snappedY);
+            g.drawText (juce::StringRef (textBuffer), bounds, juce::Justification::centred, false);
+        }
+        
+    private:
+        CompassEQAudioProcessorEditor& editor;
+        char textBuffer[64] = {0};
+    };
+
     // ---------------- Helpers ----------------
-    void configureKnob (juce::Slider&);
+    void configureKnob (CompassSlider&, const char* paramId, float defaultValue);
 
     // ---------------- References ----------------
     CompassEQAudioProcessor& proc;
     APVTS& apvts;
 
     // ---------------- Controls ----------------
-    juce::Slider lfFreq, lfGain;
-    juce::Slider lmfFreq, lmfGain, lmfQ;
-    juce::Slider hmfFreq, hmfGain, hmfQ;
-    juce::Slider hfFreq, hfGain;
+    CompassSlider lfFreq, lfGain;
+    CompassSlider lmfFreq, lmfGain, lmfQ;
+    CompassSlider hmfFreq, hmfGain, hmfQ;
+    CompassSlider hfFreq, hfGain;
 
-    juce::Slider hpfFreq, lpfFreq;
+    CompassSlider hpfFreq, lpfFreq;
 
-    juce::Slider inTrim, outTrim;
+    CompassSlider inTrim, outTrim;
 
-    // ---------------- Floating Value Popup (Phase X) ----------------
-    juce::Label valuePopup;
-    juce::Slider* activeSlider = nullptr;
+    // ---------------- Phase 6: Fixed Value Readout (replaces moving popup) ----------------
+    ValueReadout valueReadout;
+    CompassSlider* activeSlider = nullptr;
+    
+    // Phase 6: Fixed readout bounds (set in resized(), never changes)
+    static constexpr int kReadoutX = 300;
+    static constexpr int kReadoutY = 30;
+    static constexpr int kReadoutW = 160;
+    static constexpr int kReadoutH = 18;
 
     class AltClickToggle final : public juce::ToggleButton
     {
