@@ -4,3 +4,13 @@
 /*.vst3/
 /*.component
 .DS_Store
+
+# Local scratch / notes
+*.rtf
+
+# Local docs scratch (keep tracked docs elsewhere)
+Docs/
+
+# Local build artifacts (if not already ignored)
+build/
+Build*/
