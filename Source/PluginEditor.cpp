@@ -46,6 +46,167 @@ namespace
         auto r = juce::Rectangle<int> (editor.getX() + inset, zone.getY(), editor.getWidth() - (inset * 2), zone.getHeight());
         return r.getIntersection (editor);
     }
+
+    // ===== PHASE 7: SSL KNOB LOCK (deterministic geometry; no gradients/images) =====
+    // Helper signature is fixed, but indicator angle must use JUCE's rotaryStart/End angles.
+    // We set these immediately before calling drawSSLKnob() from drawRotarySlider().
+    static float gRotaryStartAngleRad = 0.0f;
+    static float gRotaryEndAngleRad   = juce::MathConstants<float>::twoPi;
+
+    static inline int unitPxFromScaleKey (float scaleKey)
+    {
+        // unitPx = clamp(round(scaleKey), 1, 2)
+        return juce::jlimit (1, 2, juce::roundToInt (scaleKey));
+    }
+
+    // PHASE 7 — SSL KNOB RENDERER (LOCKED)
+    // Visual gate passed: manufactured hardware at idle
+    // Do not modify without reopening Phase 7
+    static void drawSSLKnob (juce::Graphics& g, juce::Rectangle<float> b, float value01, float scaleKey)
+    {
+        if (b.isEmpty())
+            return;
+
+        // 0) Precompute geometry (no drawing)
+        const float physicalScale = juce::jmax (1.0f, (float) g.getInternalContext().getPhysicalPixelScaleFactor());
+
+        const float size = juce::jmin (b.getWidth(), b.getHeight());
+        const float R = 0.5f * size;
+
+        const auto cRaw = b.getCentre();
+        const float cx = UIStyle::Snap::snapPx (cRaw.x, physicalScale);
+        const float cy = UIStyle::Snap::snapPx (cRaw.y, physicalScale);
+
+        // Geometry ratios (locked)
+        const float rOuter      = 1.00f * R;
+        const float rSkirtInner = 0.86f * R;
+        const float rTopOuter   = 0.86f * R;
+        const float rTopInner   = 0.62f * R;
+        const float rCap        = 0.26f * R; // locked
+
+        // Strokes (scale-aware, clamped)
+        const float px1 = (float) unitPxFromScaleKey (scaleKey);
+        const float breakStroke = juce::jlimit (1.0f, 2.0f, px1);
+
+        auto circleBounds = [] (float ccx, float ccy, float rr)
+        {
+            return juce::Rectangle<float> (ccx - rr, ccy - rr, rr * 2.0f, rr * 2.0f);
+        };
+
+        auto snapEllipse = [&] (juce::Rectangle<float> rf)
+        {
+            const float x1 = UIStyle::Snap::snapPx (rf.getX(), physicalScale);
+            const float y1 = UIStyle::Snap::snapPx (rf.getY(), physicalScale);
+            const float x2 = UIStyle::Snap::snapPx (rf.getRight(), physicalScale);
+            const float y2 = UIStyle::Snap::snapPx (rf.getBottom(), physicalScale);
+            return juce::Rectangle<float> (x1, y1, x2 - x1, y2 - y1);
+        };
+
+        // Tones (grayscale only)
+        const juce::Colour skirtCol     = UIStyle::Colors::knobBody;                 // dark
+        const juce::Colour breakCol     = juce::Colour::fromRGB (22, 22, 22);       // darker than skirt
+        const juce::Colour topCol       = juce::Colour::fromRGB (56, 56, 56);       // slightly lighter
+        const juce::Colour innerRingCol = juce::Colour::fromRGB (34, 34, 34);       // darker than top
+        const juce::Colour capCol       = juce::Colour::fromRGB (46, 46, 46);       // slightly darker than top
+
+        // Snapped bounds
+        const auto outerB = snapEllipse (circleBounds (cx, cy, rOuter));
+        const auto topB   = snapEllipse (circleBounds (cx, cy, rTopOuter));
+        const auto innerB = snapEllipse (circleBounds (cx, cy, rTopInner));
+        const auto capB   = snapEllipse (circleBounds (cx, cy, rCap));
+
+        // 1) Skirt fill (dark)
+        g.setColour (skirtCol);
+        g.fillEllipse (outerB);
+
+        // 2) Break ring stroke at 0.86R (crisp)
+        {
+            const auto breakB = snapEllipse (circleBounds (cx, cy, rSkirtInner));
+            g.setColour (breakCol);
+            g.drawEllipse (breakB, breakStroke);
+        }
+
+        // 3) Top disc fill (slightly lighter)
+        g.setColour (topCol);
+        g.fillEllipse (topB);
+
+        // 4) Inner ring stroke at 0.62R
+        g.setColour (innerRingCol);
+        g.drawEllipse (innerB, px1);
+
+        // 5) Directional edge grammar ONLY via edge strips (global top-left)
+        {
+            juce::Graphics::ScopedSaveState ss (g);
+            juce::Path clip;
+            clip.addEllipse (outerB);
+            g.reduceClipRegion (clip);
+
+            const float arcR = rOuter - (px1 * 0.75f);
+
+            auto strokeArcDeg = [&] (float degStart, float degEnd, juce::Colour col, float alpha)
+            {
+                const float a0 = juce::degreesToRadians (degStart);
+                const float a1 = juce::degreesToRadians (degEnd);
+                juce::Path p;
+                p.addCentredArc (cx, cy, arcR, arcR, 0.0f, a0, a1, true);
+                g.setColour (col.withAlpha (alpha));
+                g.strokePath (p, juce::PathStrokeType (px1, juce::PathStrokeType::curved, juce::PathStrokeType::butt));
+            };
+
+            // Exactly one highlight arc (top-left) and one occlusion arc (bottom-right)
+            const float hiA  = juce::jmin (UIStyle::highlightAlphaMax, 0.12f);
+            const float occA = juce::jmin (UIStyle::occlusionAlphaMax, 0.18f);
+
+            strokeArcDeg (140.0f, 305.0f, UIStyle::Colors::foreground, hiA); // top-left
+            strokeArcDeg (-35.0f, 140.0f, juce::Colours::black,        occA); // bottom-right
+        }
+
+        // 6) Center cap fill + 1px cap stroke
+        g.setColour (capCol);
+        g.fillEllipse (capB);
+        g.setColour (juce::Colours::black.withAlpha (0.14f));
+        g.drawEllipse (capB, px1);
+
+        // 7) Tooling inflection ring: subtle ring 5–8px inside top edge (low contrast)
+        {
+            const float insetNom = 6.0f * scaleKey;
+            float inset = juce::jlimit (5.0f * scaleKey, 8.0f * scaleKey, insetNom);
+            inset = juce::jmin (inset, rTopOuter - (px1 * 2.0f)); // bounds safety for small knobs
+
+            const auto inflectB = snapEllipse (circleBounds (cx, cy, rTopOuter - inset));
+            g.setColour (juce::Colours::black.withAlpha (0.035f));
+            g.drawEllipse (inflectB, px1);
+        }
+
+        // 8) Indicator: UNDERSTROKE dark then MAIN stroke light, square/butt caps
+        {
+            const float v = juce::jlimit (0.0f, 1.0f, value01);
+            const float angleRad = gRotaryStartAngleRad + v * (gRotaryEndAngleRad - gRotaryStartAngleRad);
+
+            const float r0 = 0.28f * R;
+            const float r1 = 0.78f * R;
+            auto p0 = juce::Point<float> (cx, cy).getPointOnCircumference (r0, angleRad);
+            auto p1 = juce::Point<float> (cx, cy).getPointOnCircumference (r1, angleRad);
+            p0 = UIStyle::Snap::snapPoint (p0, physicalScale);
+            p1 = UIStyle::Snap::snapPoint (p1, physicalScale);
+
+            juce::Path indicator;
+            indicator.startNewSubPath (p0);
+            indicator.lineTo (p1);
+
+            // Thickness rule:
+            // - main stroke >= 2.0f * scaleKey
+            // - under-stroke thicker than main
+            const float mainW  = juce::jmax (2.0f * scaleKey, 2.0f);
+            const float underW = mainW + px1;
+
+            g.setColour (UIStyle::Colors::knobIndicatorUnderStroke.withAlpha (0.45f));
+            g.strokePath (indicator, juce::PathStrokeType (underW, juce::PathStrokeType::mitered, juce::PathStrokeType::butt));
+
+            g.setColour (UIStyle::Colors::knobIndicator.withAlpha (0.95f));
+            g.strokePath (indicator, juce::PathStrokeType (mainW, juce::PathStrokeType::mitered, juce::PathStrokeType::butt));
+        }
+    }
 }
 
 // ===== Value popup helper (cpp-only) =====
@@ -61,7 +222,6 @@ static inline juce::String popupTextFor (juce::Slider& s)
 // ✓ No Image reallocation in paint, no Gradient objects created per-frame without reuse/caching
 // ✓ Fonts from ladders/tokens (FontLadder returns const references)
 // ✓ Path objects: knobClip, underStroke, indicatorPath are stack-allocated (acceptable for small paths)
-// ✓ ColourGradient: bottomOcclusion is stack-allocated (acceptable for small gradients)
 // ✓ All coordinates are stack-allocated floats/ints
 // ✓ Caches rebuilt only on invalidation events (scaleKey change, resize) via AsyncUpdater
 void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider (
@@ -69,105 +229,12 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider (
     float sliderPos, float rotaryStartAngle, float rotaryEndAngle,
     juce::Slider&)
 {
-    // Phase 2: Get scaleKey and physical scale for snapping
     const float scaleKey = editor.getScaleKeyActive();
-    const float physicalScale = juce::jmax (1.0f, (float) g.getInternalContext().getPhysicalPixelScaleFactor());
-
-    const auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height);
-    const auto centre = bounds.getCentre();
-    const auto radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
-
-    // Phase 2: Snap centre to pixel grid
-    const auto cx = UIStyle::Snap::snapPx (centre.x, physicalScale);
-    const auto cy = UIStyle::Snap::snapPx (centre.y, physicalScale);
-    const auto r = radius;
-
-    // Phase 2: Snap ellipse bounds - snap BOTH edges, then compute width/height
-    const auto ellipseX1 = UIStyle::Snap::snapPx (cx - r, physicalScale);
-    const auto ellipseX2 = UIStyle::Snap::snapPx (cx + r, physicalScale);
-    const auto ellipseY1 = UIStyle::Snap::snapPx (cy - r, physicalScale);
-    const auto ellipseY2 = UIStyle::Snap::snapPx (cy + r, physicalScale);
-    const auto ellipseX = ellipseX1;
-    const auto ellipseY = ellipseY1;
-    const auto ellipseW = ellipseX2 - ellipseX1;
-    const auto ellipseH = ellipseY2 - ellipseY1;
-
-    // A) Base matte body (flat, no gradient hotspot)
-    g.setColour (UIStyle::Colors::knobBody);
-    g.fillEllipse (ellipseX, ellipseY, ellipseW, ellipseH);
-
-    // B) Bottom occlusion (depth cue - clipped)
-    g.saveState();
-    juce::Path knobClip;
-    knobClip.addEllipse (ellipseX, ellipseY, ellipseW, ellipseH);
-    g.reduceClipRegion (knobClip);
-    
-    juce::ColourGradient bottomOcclusion (juce::Colours::transparentBlack, cx, cy + r * UIStyle::Knob::occlusionTopOffset,
-                                         UIStyle::Colors::knobOcclusion.withAlpha (UIStyle::Knob::occlusionAlpha), cx, cy + r * UIStyle::Knob::occlusionBottomOffset, false);
-    g.setGradientFill (bottomOcclusion);
-    g.fillEllipse (ellipseX, ellipseY, ellipseW, ellipseH);
-    g.restoreState();
-
-    // C) Hardware rings (readability) - Phase 2: Discrete stroke ladder by scaleKey
-    // 1. Outer silhouette ring
-    const auto outerRimThickness = UIStyle::Knob::getOuterRimThickness (scaleKey);
-    g.setColour (UIStyle::Colors::knobOuterRim.withAlpha (UIStyle::Knob::outerRimAlpha));
-    g.drawEllipse (ellipseX, ellipseY, ellipseW, ellipseH, outerRimThickness);
-
-    // 2. Lip highlight ring (just inside silhouette) - Phase 2: Snap both edges
-    const auto lipRadius = r * UIStyle::Knob::lipRadiusMultiplier;
-    const auto lipThickness = UIStyle::Knob::getLipThickness (scaleKey);
-    const auto lipX1 = UIStyle::Snap::snapPx (cx - lipRadius, physicalScale);
-    const auto lipX2 = UIStyle::Snap::snapPx (cx + lipRadius, physicalScale);
-    const auto lipY1 = UIStyle::Snap::snapPx (cy - lipRadius, physicalScale);
-    const auto lipY2 = UIStyle::Snap::snapPx (cy + lipRadius, physicalScale);
-    const auto lipX = lipX1;
-    const auto lipY = lipY1;
-    const auto lipW = lipX2 - lipX1;
-    const auto lipH = lipY2 - lipY1;
-    g.setColour (UIStyle::Colors::knobLipHighlight.withAlpha (UIStyle::Knob::lipHighlightAlpha));
-    g.drawEllipse (lipX, lipY, lipW, lipH, lipThickness);
-
-    // 3. Inner shadow ring - Phase 2: Snap both edges
-    const auto innerShadowRadius = r * UIStyle::Knob::innerShadowRadiusMultiplier;
-    const auto innerShadowThickness = UIStyle::Knob::getInnerShadowThickness (scaleKey);
-    const auto innerX1 = UIStyle::Snap::snapPx (cx - innerShadowRadius, physicalScale);
-    const auto innerX2 = UIStyle::Snap::snapPx (cx + innerShadowRadius, physicalScale);
-    const auto innerY1 = UIStyle::Snap::snapPx (cy - innerShadowRadius, physicalScale);
-    const auto innerY2 = UIStyle::Snap::snapPx (cy + innerShadowRadius, physicalScale);
-    const auto innerX = innerX1;
-    const auto innerY = innerY1;
-    const auto innerW = innerX2 - innerX1;
-    const auto innerH = innerY2 - innerY1;
-    g.setColour (UIStyle::Colors::knobInnerShadow.withAlpha (UIStyle::Knob::innerShadowAlpha));
-    g.drawEllipse (innerX, innerY, innerW, innerH, innerShadowThickness);
-
-    // D) Indicator line - Phase 2: Snap endpoints, discrete stroke
-    const auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
-    const auto lineLength = r * UIStyle::Knob::indicatorLengthMultiplier;
-    const auto lineThickness = UIStyle::Knob::getIndicatorThickness (scaleKey);
-
-    auto lineStart = juce::Point<float> (cx, cy).getPointOnCircumference (r * UIStyle::Knob::indicatorStartRadiusMultiplier, angle);
-    auto lineEnd = juce::Point<float> (cx, cy).getPointOnCircumference (lineLength, angle);
-    
-    // Phase 2: Snap indicator endpoints
-    lineStart = UIStyle::Snap::snapPoint (lineStart, physicalScale);
-    lineEnd = UIStyle::Snap::snapPoint (lineEnd, physicalScale);
-
-    // Under-stroke (slightly thicker than main line, lower alpha)
-    const auto underStrokeThickness = UIStyle::Knob::getIndicatorUnderStrokeThickness (scaleKey);
-    g.setColour (UIStyle::Colors::knobIndicatorUnderStroke.withAlpha (UIStyle::Knob::indicatorUnderStrokeAlpha));
-    juce::Path underStroke;
-    underStroke.startNewSubPath (lineStart);
-    underStroke.lineTo (lineEnd);
-    g.strokePath (underStroke, juce::PathStrokeType (underStrokeThickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-    // Main indicator line
-    g.setColour (UIStyle::Colors::knobIndicator);
-    juce::Path indicatorPath;
-    indicatorPath.startNewSubPath (lineStart);
-    indicatorPath.lineTo (lineEnd);
-    g.strokePath (indicatorPath, juce::PathStrokeType (lineThickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height);
+    bounds = bounds.reduced (juce::jmax (1.0f, 1.0f * scaleKey));
+    gRotaryStartAngleRad = rotaryStartAngle;
+    gRotaryEndAngleRad = rotaryEndAngle;
+    drawSSLKnob (g, bounds, sliderPos, scaleKey);
 }
 
 CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor (CompassEQAudioProcessor& p)
