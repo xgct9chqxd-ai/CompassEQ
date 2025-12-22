@@ -346,7 +346,8 @@ private:
 
     // ---------------- Scale Management (Phase 1) ----------------
     float getPhysicalScaleLastPaint() const { return physicalScaleLastPaint; }
-    float getScaleKeyActive() const { return scaleKeyActive; }
+    // UI is single-scale (1.0f). Do not add DPI scaling without reopening UI/knob gates.
+    float getScaleKeyActive() const { return 1.0f; }
 
     // Scale state machine (stability + rate limiting)
     float physicalScaleLastPaint = 1.0f;
