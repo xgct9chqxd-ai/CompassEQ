@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <cmath>
 #include <functional>
 #include "PluginProcessor.h"
 #include "UIStyle.h"
@@ -158,6 +159,45 @@ private:
     {
     public:
         CompassSlider() = default;
+
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            lastDragY = e.getPosition().y;
+            juce::Slider::mouseDown (e);
+        }
+
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            const int y = e.getPosition().y;
+            int deltaPixels = y - lastDragY;
+            lastDragY = y;
+
+            // Shift path only: compressed velocity for fine control (no change to non-Shift behavior)
+            if (e.mods.isShiftDown())
+            {
+                // Anti-skip limiter: clamp per-event delta in Shift mode so bursts can't jump detents.
+                const float maxDeltaPxPerEvent = 6.0f; // Shift mode cap (single-scale)
+                deltaPixels = (int) juce::jlimit (-maxDeltaPxPerEvent, maxDeltaPxPerEvent, (float) deltaPixels);
+
+                // vCap is constant because UI is single-scale.
+                const float vCap = 30.0f;
+                const float v = (float) std::abs (deltaPixels);
+                const float t = juce::jlimit (0.0f, 1.0f, v / vCap);
+                const float compressed = std::sqrt (t);
+
+                const float shiftMin = 0.28f;
+                const float shiftMax = 0.62f;
+                const float shiftSensitivity = juce::jmap (compressed, shiftMin, shiftMax);
+
+                // Update only the Shift velocity-mode sensitivity. (Normal drag path is unchanged.)
+                setVelocityModeParameters (shiftSensitivity, 0, 0.0, true, juce::ModifierKeys::shiftModifier);
+            }
+
+            juce::Slider::mouseDrag (e);
+        }
+
+    private:
+        int lastDragY = 0;
     };
 
     // ---------------- Phase 6: Fixed Value Readout (allocation-safe, fixed bounds) ----------------
@@ -263,6 +303,62 @@ private:
             }
 
             juce::ToggleButton::mouseUp (e);
+        }
+
+        void paintButton (juce::Graphics& g, bool /*shouldDrawButtonAsHighlighted*/, bool shouldDrawButtonAsDown) override
+        {
+            const auto b = getLocalBounds();
+            if (b.isEmpty())
+                return;
+
+            const bool isOn = getToggleState();
+            (void) shouldDrawButtonAsDown; // no hover/pressed styling (LOCKED)
+
+            // SSL BYPASS button — drop-in spec (LOCKED)
+            //
+            // Geometry:
+            //   r = getLocalBounds().toFloat().reduced(0.5f);
+            //   Outer border stroke: 1.0f
+            //   Inner edge stroke: 1.0f on r.reduced(1.0f)
+            const auto r = b.toFloat().reduced (0.5f);
+
+            // Colors (LOCKED CONSTANTS)
+            const auto border = juce::Colour::fromRGB (120, 120, 120);
+            const auto innerEdge = juce::Colours::black.withAlpha (0.18f);
+
+            const auto offFill = juce::Colour::fromRGB (210, 210, 210);
+            const auto offText = juce::Colour::fromRGB (12, 12, 12);
+
+            const auto onFill = juce::Colour::fromRGB (210, 210, 210);
+            const auto glowC = juce::Colour::fromRGB (160, 235, 195);
+            const auto onText = juce::Colour::fromRGB (12, 12, 12);
+
+            // 1) Fill base (OFF/ON both use off-white base)
+            g.setColour (isOn ? onFill : offFill);
+            g.fillRect (r);
+
+            // 2) If ON: draw glow1, then glow2 (inset overlays; flat rectangles; no gradients)
+            if (isOn)
+            {
+                g.setColour (glowC.withAlpha (0.22f));
+                g.fillRect (r.reduced (2.0f));
+
+                g.setColour (glowC.withAlpha (0.14f));
+                g.fillRect (r.reduced (5.0f));
+            }
+
+            // 3) Draw 1px outer border
+            g.setColour (border);
+            g.drawRect (r, 1.0f);
+
+            // 4) Draw 1px inner darkening stroke
+            g.setColour (innerEdge);
+            g.drawRect (r.reduced (1.0f), 1.0f);
+
+            // 5) Draw centered text (same sizing as current; do not enlarge)
+            g.setColour (isOn ? onText : offText);
+            g.setFont (12.0f);
+            g.drawFittedText (getButtonText(), b.reduced (6, 0), juce::Justification::centred, 1);
         }
     };
 

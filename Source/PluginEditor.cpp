@@ -47,6 +47,379 @@ namespace
         return r.getIntersection (editor);
     }
 
+    // ===== Phase 8/9 Contract: Tier-2 faceplate baseline (flat, uniform) + Tier-3 wells =====
+    // NOTE: Stage 1 ONLY: no zones, no seams, no gradients, no per-region faceplate logic.
+    static inline juce::Colour gray8 (int v)
+    {
+        const uint8_t g = (uint8_t) juce::jlimit (0, 255, v);
+        return juce::Colour::fromRGB (g, g, g);
+    }
+
+    // ===== SECTION BACKGROUND CONTRACT — STAGE 1 (LOCKED, NO VISUAL APPLICATION) =====
+    // Baseline reference (Tier-2 fill region lock):
+    //   screenshot "Screenshot 2025-12-22 at 4.01.06 PM.png"
+    //
+    // Color space lock: OKLab
+    // Transfer space lock: linear light
+    //
+    // Transform rules (LOCKED):
+    //   - Hue = knob hue (0° shift)
+    //   - Saturation = knob saturation × satRatio, with saturation := OKLCH chroma C
+    //   - Luminance = knob luminance − fixed offset, with luminance := OKLab L (scaled 0..100 for ΔL* values)
+    //
+    // Clamps (LOCKED):
+    //   - Background chroma C <= 0.30
+    //   - Background luminance delta in [-8, -14] => here fixed at -10
+    //
+    // NOTE: This stage defines the transform only. Do not apply any visuals/dividers here.
+    struct OKLab { float L, a, b; }; // L in [0..1] (linear-light OKLab)
+
+    static inline float srgbToLinear1 (float s)
+    {
+        // Explicit sRGB EOTF (gamma-encoded -> linear light)
+        if (s <= 0.04045f) return s / 12.92f;
+        return std::pow ((s + 0.055f) / 1.055f, 2.4f);
+    }
+
+    static inline float linearToSrgb1 (float l)
+    {
+        // Explicit sRGB OETF (linear light -> gamma-encoded)
+        if (l <= 0.0031308f) return l * 12.92f;
+        return 1.055f * std::pow (l, 1.0f / 2.4f) - 0.055f;
+    }
+
+    static inline OKLab linearSrgbToOklab (float rLin, float gLin, float bLin)
+    {
+        // Explicit linear-sRGB -> OKLab (Björn Ottosson)
+        const float l = 0.4122214708f * rLin + 0.5363325363f * gLin + 0.0514459929f * bLin;
+        const float m = 0.2119034982f * rLin + 0.6806995451f * gLin + 0.1073969566f * bLin;
+        const float s = 0.0883024619f * rLin + 0.2817188376f * gLin + 0.6299787005f * bLin;
+
+        const float l_ = std::cbrt (l);
+        const float m_ = std::cbrt (m);
+        const float s_ = std::cbrt (s);
+
+        OKLab out;
+        out.L = 0.2104542553f * l_ + 0.7936177850f * m_ - 0.0040720468f * s_;
+        out.a = 1.9779984951f * l_ - 2.4285922050f * m_ + 0.4505937099f * s_;
+        out.b = 0.0259040371f * l_ + 0.7827717662f * m_ - 0.8086757660f * s_;
+        return out;
+    }
+
+    static inline void oklabToLinearSrgb (OKLab lab, float& rLin, float& gLin, float& bLin)
+    {
+        // Explicit OKLab -> linear-sRGB (Björn Ottosson)
+        const float l_ = lab.L + 0.3963377774f * lab.a + 0.2158037573f * lab.b;
+        const float m_ = lab.L - 0.1055613458f * lab.a - 0.0638541728f * lab.b;
+        const float s_ = lab.L - 0.0894841775f * lab.a - 1.2914855480f * lab.b;
+
+        const float l = l_ * l_ * l_;
+        const float m = m_ * m_ * m_;
+        const float s = s_ * s_ * s_;
+
+        rLin = +4.0767416621f * l - 3.3077115913f * m + 0.2309699292f * s;
+        gLin = -1.2684380046f * l + 2.6097574011f * m - 0.3413193965f * s;
+        bLin = -0.0041960863f * l - 0.7034186147f * m + 1.7076147010f * s;
+    }
+
+    static inline juce::Colour stage1_knobToSectionBg_OkLabLinear (juce::Colour knobBaseSrgb)
+    {
+        // Locked numeric constants
+        constexpr float satRatio = 0.30f;
+        constexpr float maxChromaC = 0.30f;
+        constexpr float luminanceDeltaLstar = -10.0f; // OKLab L scaled 0..100 for ΔL* values
+
+        // Explicit transfer: sRGB (gamma) -> linear
+        const float rLin = srgbToLinear1 (knobBaseSrgb.getFloatRed());
+        const float gLin = srgbToLinear1 (knobBaseSrgb.getFloatGreen());
+        const float bLin = srgbToLinear1 (knobBaseSrgb.getFloatBlue());
+
+        // Explicit OKLab conversion
+        OKLab lab = linearSrgbToOklab (rLin, gLin, bLin);
+
+        // OKLCH (saturation := chroma C), hue preserved
+        const float hue = std::atan2 (lab.b, lab.a);
+        const float chroma = std::sqrt (lab.a * lab.a + lab.b * lab.b);
+
+        const float newChroma = juce::jmin (maxChromaC, chroma * satRatio);
+
+        // Luminance = OKLab L component, scaled 0..100 for the ΔL* rule.
+        const float L100 = lab.L * 100.0f;
+        const float newL100 = juce::jlimit (0.0f, 100.0f, L100 + luminanceDeltaLstar);
+        lab.L = newL100 / 100.0f;
+
+        lab.a = std::cos (hue) * newChroma;
+        lab.b = std::sin (hue) * newChroma;
+
+        // Explicit OKLab -> linear sRGB
+        float outRLin = 0.0f, outGLin = 0.0f, outBLin = 0.0f;
+        oklabToLinearSrgb (lab, outRLin, outGLin, outBLin);
+
+        // Explicit transfer: linear -> sRGB (gamma), clamp to gamut
+        const float outR = juce::jlimit (0.0f, 1.0f, linearToSrgb1 (juce::jlimit (0.0f, 1.0f, outRLin)));
+        const float outG = juce::jlimit (0.0f, 1.0f, linearToSrgb1 (juce::jlimit (0.0f, 1.0f, outGLin)));
+        const float outB = juce::jlimit (0.0f, 1.0f, linearToSrgb1 (juce::jlimit (0.0f, 1.0f, outBLin)));
+
+        return juce::Colour::fromFloatRGBA (outR, outG, outB, 1.0f);
+    }
+
+    // Stage 1 knob source lock: use knob base color constant (sole source).
+    static inline juce::Colour stage1_sectionBgFromKnobBase()
+    {
+        return stage1_knobToSectionBg_OkLabLinear (UIStyle::Colors::knobBody);
+    }
+
+    // ===== Stage 5.1 (LMF identity fill) — hue source lock revised =====
+    // LOCK: BAND_HUE_CONSTANTS_ALLOWED: YES
+    // LOCK: KNOB_RENDERING_MUST_REMAIN_NEUTRAL: YES
+    // Hue source: UIStyle::Colors::bandHue* (OKLCH hue degrees), NOT knobBody.
+    //
+    // Numeric locks (unchanged):
+    //   satRatio = 0.30
+    //   ΔL* (OKLab L in 0..100 space) = -10
+    //   C clamp <= 0.30
+    //   opacity = 0.14
+    static inline juce::Colour stage5_bandHueToSectionBg_OkLabLinear (float hueDeg, juce::Colour knobBodySrgbNeutral)
+    {
+        constexpr float satRatio = 0.55f;
+        constexpr float maxChromaC = 0.30f;
+        constexpr float luminanceDeltaLstar = -10.0f;
+
+        // Luminance source remains the knob body constant (neutral), per locked rules.
+        const float kR = srgbToLinear1 (knobBodySrgbNeutral.getFloatRed());
+        const float kG = srgbToLinear1 (knobBodySrgbNeutral.getFloatGreen());
+        const float kB = srgbToLinear1 (knobBodySrgbNeutral.getFloatBlue());
+        OKLab knobLab = linearSrgbToOklab (kR, kG, kB);
+
+        const float L100 = knobLab.L * 100.0f;
+        const float newL100 = juce::jlimit (0.0f, 100.0f, L100 + luminanceDeltaLstar);
+
+        // Hue is locked from band constants (OKLCH hue degrees). "Saturation" is OKLCH chroma C.
+        // Since hue constants are angle-only, define source chroma as unit (1.0) in OKLab space for the satRatio rule.
+        const float hueRad = juce::degreesToRadians (hueDeg);
+        const float newChroma = (hueDeg < 0.0f) ? 0.0f : juce::jmin (maxChromaC, 1.0f * satRatio);
+
+        OKLab lab;
+        lab.L = newL100 / 100.0f;
+        lab.a = std::cos (hueRad) * newChroma;
+        lab.b = std::sin (hueRad) * newChroma;
+
+        float outRLin = 0.0f, outGLin = 0.0f, outBLin = 0.0f;
+        oklabToLinearSrgb (lab, outRLin, outGLin, outBLin);
+
+        const float outR = juce::jlimit (0.0f, 1.0f, linearToSrgb1 (juce::jlimit (0.0f, 1.0f, outRLin)));
+        const float outG = juce::jlimit (0.0f, 1.0f, linearToSrgb1 (juce::jlimit (0.0f, 1.0f, outGLin)));
+        const float outB = juce::jlimit (0.0f, 1.0f, linearToSrgb1 (juce::jlimit (0.0f, 1.0f, outBLin)));
+
+        return juce::Colour::fromFloatRGBA (outR, outG, outB, 1.0f);
+    }
+
+    // Stage 3: L* -> grayscale mapping (monotonic, grayscale only).
+    // Note: We only need consistency + monotonicity for subtle ΔL* zoning (no hue/sat/texture).
+    static inline juce::Colour lstarToGray (float lstar)
+    {
+        const float clamped = juce::jlimit (0.0f, 100.0f, lstar);
+        const int gray = juce::roundToInt (clamped * 2.55f); // linear 0..100 -> 0..255
+        return gray8 (gray);
+    }
+
+    // STAGE 2 — LIGHTING INVARIANCE LOCK (Tier 2 only)
+    // One lighting function. One highlight behavior. One occlusion behavior.
+    // Apply uniformly to any Tier-2 faceplate geometry. Do not introduce per-zone lighting.
+    static void applyTier2LightingUniform (juce::Graphics& g, juce::Rectangle<int> r, float physicalScale)
+    {
+        if (r.isEmpty())
+            return;
+
+        const float px = juce::jmax (1.0f, 1.0f / physicalScale);
+        const float x1 = UIStyle::Snap::snapPx ((float) r.getX(), physicalScale);
+        const float y1 = UIStyle::Snap::snapPx ((float) r.getY(), physicalScale);
+        const float x2 = UIStyle::Snap::snapPx ((float) r.getRight(), physicalScale);
+        const float y2 = UIStyle::Snap::snapPx ((float) r.getBottom(), physicalScale);
+
+        // Highlight (top + left) — capped
+        g.setColour (juce::Colours::white.withAlpha (juce::jmin (UIStyle::highlightAlphaMax, 0.12f)));
+        g.drawLine (x1, y1, x2, y1, px);
+        g.drawLine (x1, y1, x1, y2, px);
+
+        // Occlusion (bottom + right) — capped
+        g.setColour (juce::Colours::black.withAlpha (juce::jmin (UIStyle::occlusionAlphaMax, 0.18f)));
+        g.drawLine (x1, y2, x2, y2, px);
+        g.drawLine (x2, y1, x2, y2, px);
+    }
+
+    // STAGE 3 — ZONE VALUE DELTAS (NO SEAMS)
+    // Value-only zone fills (no borders/lines/seams), then one uniform lighting pass over the full plate.
+    static void drawFaceplateStage3ZonedNoSeams (
+        juce::Graphics& g,
+        juce::Rectangle<int> editor,
+        juce::Rectangle<int> zoneHeader,
+        juce::Rectangle<int> zoneFilters,
+        juce::Rectangle<int> zoneBands,
+        juce::Rectangle<int> zoneTrim,
+        juce::Rectangle<int> colLF,
+        juce::Rectangle<int> colLMF,
+        juce::Rectangle<int> colHMF,
+        juce::Rectangle<int> colHF,
+        juce::Rectangle<int> hpfKnob,
+        juce::Rectangle<int> lpfKnob,
+        juce::Rectangle<int> meterInRect,
+        juce::Rectangle<int> meterOutRect,
+        float physicalScale)
+    {
+        if (editor.isEmpty())
+            return;
+
+        // STAGE 5.5 — NEUTRAL BLACK BASE PLATE (LOCKED)
+        // Any region outside the colored band lanes must render as neutral black.
+        // One base plate black constant only.
+        const auto plateBaseBlack = juce::Colour::fromRGB (18, 18, 18);
+        g.setColour (plateBaseBlack);
+        g.fillRect (editor);
+
+        // STAGE 5 — ROLL-OUT TO ALL EQ BANDS (LF / LMF / HMF / HF)
+        // LOCKED CONSTANTS (DO NOT CHANGE):
+        //   - satRatio = 0.55f
+        //   - ΔL* = −10
+        //   - C clamp ≤ 0.30
+        //   - opacity = 0.14
+        //   - fill geometry = equal-width lanes (Stage 5.7 lock)
+        //   - draw order = NO_POST_DIMMING
+        // Dividers (LOCKED):
+        //   - thickness = 1px
+        //   - color = RGB(230,230,230)
+        //   - opacity = 0.65f
+        //   - position = computed divider x's between equal-width lanes only
+        {
+            auto bandsRect = zoneBands.getIntersection (editor);
+            if (! bandsRect.isEmpty())
+            {
+                // STAGE 5.7 — EQUAL-WIDTH BAND LANES (LOCKED)
+                // STAGE 5.8 — EXPAND BAND SPAN TO METERS (LOCKED)
+                // Use meter bounds, keep a fixed gap.
+                constexpr float meterGap = 10.0f; // LOCKED
+                const float bandsSpanLeft  = (float) meterInRect.getRight() + meterGap;
+                const float bandsSpanRight = (float) meterOutRect.getX() - meterGap;
+                const float bandsSpanW = bandsSpanRight - bandsSpanLeft;
+
+                constexpr float dividerW = 1.0f;
+                const float laneW = (bandsSpanW - 3.0f * dividerW) / 4.0f;
+
+                const float x0 = bandsSpanLeft;
+                const float xDiv1 = x0 + laneW;
+                const float xDiv2 = x0 + 2.0f * laneW + 1.0f * dividerW;
+                const float xDiv3 = x0 + 3.0f * laneW + 2.0f * dividerW;
+
+                // Lane fills (flat, same opacity, per-band hue constants)
+                constexpr float laneOpacity = 0.14f;
+                auto fillLane = [&] (float xLeft, float w, float hueDeg)
+                {
+                    const auto rf = juce::Rectangle<float> (xLeft, (float) bandsRect.getY(), w, (float) bandsRect.getHeight());
+                    if (rf.isEmpty())
+                        return;
+                    const auto c = stage5_bandHueToSectionBg_OkLabLinear (hueDeg, UIStyle::Colors::knobBody).withAlpha (laneOpacity);
+                    g.setColour (c);
+                    g.fillRect (rf);
+                };
+
+                // Construct lanes from span (do not reuse old midpoints)
+                fillLane (x0,                         laneW, UIStyle::Colors::bandHueLF);
+                fillLane (x0 + laneW + dividerW,      laneW, UIStyle::Colors::bandHueLMF);
+                fillLane (x0 + 2.0f * laneW + 2*dividerW, laneW, UIStyle::Colors::bandHueHMF);
+                fillLane (x0 + 3.0f * laneW + 3*dividerW, laneW, UIStyle::Colors::bandHueHF);
+
+                // Dividers between adjacent bands only (LF|LMF|HMF|HF)
+                const auto dividerCol = juce::Colour::fromRGB (230, 230, 230).withAlpha (0.65f);
+                g.setColour (dividerCol);
+                const float y1 = (float) bandsRect.getY();
+                const float y2 = (float) bandsRect.getBottom();
+                g.drawLine (xDiv1, y1, xDiv1, y2, 1.0f);
+                g.drawLine (xDiv2, y1, xDiv2, y2, 1.0f);
+                g.drawLine (xDiv3, y1, xDiv3, y2, 1.0f);
+
+                // Outer divider frame around the entire colored EQ band lane block (LF/LMF/HMF/HF)
+                // Style is locked to match internal dividers (same 1px, same colour/alpha).
+                const float xLeft  = x0;
+                const float xRight = x0 + 4.0f * laneW + 3.0f * dividerW; // HF lane right edge
+                g.drawLine (xLeft,  y1, xRight, y1, 1.0f); // top
+                g.drawLine (xLeft,  y2, xRight, y2, 1.0f); // bottom
+                g.drawLine (xLeft,  y1, xLeft,  y2, 1.0f); // left
+                g.drawLine (xRight, y1, xRight, y2, 1.0f); // right
+            }
+        }
+
+        // Stage 5.5 lock: no alpha overlays that re-lighten the neutral black base afterward.
+
+        // STAGE 5.4b — TOP FILTER ZONE = NEUTRAL BLACK (SSL-LIKE) (LOCKED)
+        // A) Replace filter bar fill with neutral black (no tint/no hue/no noise).
+        // B) HPF/LPF placement is computed from this rect in resized(): centerY = y + (h * 0.40).
+        // C) Ensure no residual grey remains: this rect is drawn last among plate elements (after lighting) but before knobs.
+        {
+            // Locked: use exact neutral background tone already used (no alpha blending against plate).
+            const auto topZoneColor = juce::Colour::fromRGB (18, 18, 18);
+            constexpr int padTop = 10;
+            constexpr int padBottom = 10;
+
+            // X bounds: same lane span as band lanes (LF lane left -> HF lane right)
+            const auto bandsRect = zoneBands.getIntersection (editor);
+            const int xLeft_LF   = bandsRect.getX();
+            const int xRight_HF  = bandsRect.getRight();
+
+            // Y bounds: defined from HPF/LPF label-top area down to knob block bottom, plus locked padding.
+            // Use the knob bounds (already centered in resized()) only to locate the vertical extent, not to size via union-of-controls.
+            constexpr int labelTopPad = 28; // header yOffset=-16, height=12 => 28px above knob top
+            const int knobTop = juce::jmin (hpfKnob.getY(), lpfKnob.getY());
+            const int knobBottom = juce::jmax (hpfKnob.getBottom(), lpfKnob.getBottom());
+            const int yTop = (knobTop - labelTopPad) - padTop;
+            const int yBottom = knobBottom + padBottom;
+
+            auto filterBar = juce::Rectangle<int> (xLeft_LF, yTop, xRight_HF - xLeft_LF, yBottom - yTop)
+                                 .getIntersection (editor);
+
+            if (! filterBar.isEmpty())
+            {
+                g.setColour (topZoneColor);
+                g.fillRect (filterBar);
+            }
+        }
+    }
+
+    static void drawTier3Well (juce::Graphics& g, juce::Rectangle<int> knobBounds, float physicalScale)
+    {
+        if (knobBounds.isEmpty())
+            return;
+
+        // Tier 3: recessed well behind the knob (no gradients, no panels)
+        const auto wellCol = gray8 (26);
+        const float px = juce::jmax (1.0f, 1.0f / physicalScale);
+
+        const auto outer = knobBounds.expanded (6, 6).toFloat();
+        g.setColour (wellCol);
+        g.fillEllipse (outer);
+
+        // Inner lip edge grammar (one highlight arc + one occlusion arc)
+        juce::Graphics::ScopedSaveState ss (g);
+        juce::Path clip;
+        clip.addEllipse (outer);
+        g.reduceClipRegion (clip);
+
+        const auto c = outer.getCentre();
+        const float r = outer.getWidth() * 0.5f - px * 0.75f;
+
+        auto strokeArcDeg = [&] (float degStart, float degEnd, juce::Colour col, float alpha)
+        {
+            const float a0 = juce::degreesToRadians (degStart);
+            const float a1 = juce::degreesToRadians (degEnd);
+            juce::Path p;
+            p.addCentredArc (c.x, c.y, r, r, 0.0f, a0, a1, true);
+            g.setColour (col.withAlpha (alpha));
+            g.strokePath (p, juce::PathStrokeType (px, juce::PathStrokeType::curved, juce::PathStrokeType::butt));
+        };
+
+        strokeArcDeg (175.0f, 265.0f, juce::Colours::white, juce::jmin (UIStyle::highlightAlphaMax, 0.12f));
+        strokeArcDeg ( -5.0f,  85.0f, juce::Colours::black, juce::jmin (UIStyle::occlusionAlphaMax, 0.18f));
+    }
+
     // ===== PHASE 7: SSL KNOB LOCK (deterministic geometry; no gradients/images) =====
     // Helper signature is fixed, but indicator angle must use JUCE's rotaryStart/End angles.
     // We set these immediately before calling drawSSLKnob() from drawRotarySlider().
@@ -86,7 +459,8 @@ namespace
 
         // Strokes (scale-aware, clamped)
         const float px1 = (float) unitPxFromScaleKey (scaleKey);
-        const float breakStroke = juce::jlimit (1.0f, 2.0f, px1);
+        // Strengthen tooling break: +1px (scale-aware, crisp)
+        const float breakStroke = juce::jlimit (2.0f, 3.0f, px1 + 1.0f);
 
         auto circleBounds = [] (float ccx, float ccy, float rr)
         {
@@ -103,9 +477,11 @@ namespace
         };
 
         // Tones (grayscale only)
-        const juce::Colour skirtCol     = UIStyle::Colors::knobBody;                 // dark
-        const juce::Colour breakCol     = juce::Colour::fromRGB (22, 22, 22);       // darker than skirt
-        const juce::Colour topCol       = juce::Colour::fromRGB (56, 56, 56);       // slightly lighter
+        // - Skirt clearly darker than top (dominant mass)
+        // - Break ring darker than skirt (crisp separation)
+        const juce::Colour skirtCol     = juce::Colour::fromRGB (34, 34, 34);       // darker skirt (more dominance)
+        const juce::Colour breakCol     = juce::Colour::fromRGB (18, 18, 18);       // darker than skirt
+        const juce::Colour topCol       = juce::Colour::fromRGB (72, 72, 72);       // lighter top (bigger step vs skirt)
         const juce::Colour innerRingCol = juce::Colour::fromRGB (34, 34, 34);       // darker than top
         const juce::Colour capCol       = juce::Colour::fromRGB (46, 46, 46);       // slightly darker than top
 
@@ -154,11 +530,12 @@ namespace
             };
 
             // Exactly one highlight arc (top-left) and one occlusion arc (bottom-right)
-            const float hiA  = juce::jmin (UIStyle::highlightAlphaMax, 0.12f);
-            const float occA = juce::jmin (UIStyle::occlusionAlphaMax, 0.18f);
+            // Break lighting symmetry: tighter spans, more directional bias (alpha caps unchanged).
+            const float hiA  = juce::jmin (UIStyle::highlightAlphaMax, 0.10f); // slightly reduced skirt lighting
+            const float occA = juce::jmin (UIStyle::occlusionAlphaMax, 0.16f);
 
-            strokeArcDeg (140.0f, 305.0f, UIStyle::Colors::foreground, hiA); // top-left
-            strokeArcDeg (-35.0f, 140.0f, juce::Colours::black,        occA); // bottom-right
+            strokeArcDeg (175.0f, 265.0f, UIStyle::Colors::foreground, hiA); // top-left (tighter)
+            strokeArcDeg ( -5.0f,  85.0f, juce::Colours::black,        occA); // bottom-right (tighter)
         }
 
         // 6) Center cap fill + 1px cap stroke
@@ -467,99 +844,42 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
     constexpr float kTickA    = UIStyle::TextAlpha::tick;
 
     const auto editor = getLocalBounds();
-    g.fillAll (UIStyle::Colors::background);
+    // Stage 3: value-only zone deltas (no seams) + Stage 2 uniform lighting lock
+    drawFaceplateStage3ZonedNoSeams (
+        g,
+        editor,
+        assetSlots.headerZone,
+        assetSlots.filtersZone,
+        assetSlots.bandsZone,
+        assetSlots.trimZone,
+        assetSlots.colLF,
+        assetSlots.colLMF,
+        assetSlots.colHMF,
+        assetSlots.colHF,
+        hpfFreq.getBounds(),
+        lpfFreq.getBounds(),
+        inputMeter.getBounds(),
+        outputMeter.getBounds(),
+        physicalScale);
 
-    // ---- Global border (subtle) - Phase 2: Use discrete stroke ladder ----
-    g.setColour (UIStyle::Colors::foreground.withAlpha (UIStyle::UIAlpha::globalBorder));
-    g.drawRect (editor, (int) UIStyle::StrokeLadder::plateBorderStroke (scaleKey));
+    // ---- Global border ----
+    // Stage 5.5 lock: outside colored lanes is neutral black; do not draw non-black plate chrome here.
 
-    // ---- Plate styles (alpha ladder) ----
-    // Keep everything subtle—this is a future PNG drop-in map.
-    PlateStyle bgPlate     { UIStyle::Plate::FillAlpha::background, UIStyle::Plate::StrokeAlpha::background, UIStyle::Plate::strokeWidth, UIStyle::Plate::Radius::background, 0 };
-    PlateStyle headerPlate { UIStyle::Plate::FillAlpha::header, UIStyle::Plate::StrokeAlpha::header, UIStyle::Plate::strokeWidth, UIStyle::Plate::Radius::header, 0 };
-    PlateStyle zonePlate   { UIStyle::Plate::FillAlpha::zone, UIStyle::Plate::StrokeAlpha::zone, UIStyle::Plate::strokeWidth, UIStyle::Plate::Radius::zone, 0 };
-    PlateStyle subPlate    { UIStyle::Plate::FillAlpha::sub, UIStyle::Plate::StrokeAlpha::sub, UIStyle::Plate::strokeWidth, UIStyle::Plate::Radius::sub, 0 };
-    PlateStyle wellPlate   { UIStyle::Plate::FillAlpha::well, UIStyle::Plate::StrokeAlpha::well, UIStyle::Plate::strokeWidth, UIStyle::Plate::Radius::well, 0 };
-
-    // ---- Major plates (derived from assetSlots zones) ----
-    const int inset = 16; // paint-only breathing room (not layout)
-    auto headerFW = fullWidthFrom (assetSlots.editor, assetSlots.headerZone, inset);
-    auto filters  = fullWidthFrom (assetSlots.editor, assetSlots.filtersZone, inset);
-    auto bands    = fullWidthFrom (assetSlots.editor, assetSlots.bandsZone, inset);
-    auto trims    = fullWidthFrom (assetSlots.editor, assetSlots.trimZone, inset);
-
-    // ===== PH9.1 — Protect meter lanes (paint-only) =====
-    {
-        constexpr int meterW   = 18;
-        constexpr int meterPad = 8;
-        const int leftCut  = 24 + meterW + meterPad;
-        const int rightCut = getWidth() - 24 - meterW - meterPad;
-
-        g.saveState();
-        g.reduceClipRegion (juce::Rectangle<int> (leftCut, 0, rightCut - leftCut, getHeight()));
-
-        drawPlate (g, editor.reduced (8), bgPlate);
-
-        drawPlate (g, headerFW, headerPlate);
-        drawPlate (g, filters,  zonePlate);
-        drawPlate (g, bands,    zonePlate);
-        drawPlate (g, trims,    zonePlate);
-
-        // ---- Optional micro separators aligned to plate edges (no new UI elements) ----
-        // Phase 2: Snap hairlines to pixel grid
-        {
-            g.setColour (UIStyle::Colors::foreground.withAlpha (UIStyle::UIAlpha::microSeparator));
-            const float hairlineStroke = UIStyle::StrokeLadder::hairlineStroke (scaleKey);
-
-            // vertical edges of the bands plate (helps future asset snapping)
-            if (! bands.isEmpty())
-            {
-                const float x1 = UIStyle::Snap::snapPx ((float) bands.getX(), physicalScale);
-                const float x2 = UIStyle::Snap::snapPx ((float) bands.getRight() - 1, physicalScale);
-                const float yTop = UIStyle::Snap::snapPx ((float) bands.getY(), physicalScale);
-                const float yBottom = UIStyle::Snap::snapPx ((float) bands.getBottom(), physicalScale);
-                g.drawLine (x1, yTop, x1, yBottom, hairlineStroke);
-                g.drawLine (x2, yTop, x2, yBottom, hairlineStroke);
-            }
-
-            // horizontal separators between major zones
-            if (! filters.isEmpty())
-            {
-                const float xLeft = UIStyle::Snap::snapPx ((float) filters.getX(), physicalScale);
-                const float xRight = UIStyle::Snap::snapPx ((float) filters.getRight(), physicalScale);
-                const float y = UIStyle::Snap::snapPx ((float) filters.getBottom(), physicalScale);
-                g.drawLine (xLeft, y, xRight, y, hairlineStroke);
-            }
-
-            if (! bands.isEmpty())
-            {
-                const float xLeft = UIStyle::Snap::snapPx ((float) bands.getX(), physicalScale);
-                const float xRight = UIStyle::Snap::snapPx ((float) bands.getRight(), physicalScale);
-                const float y = UIStyle::Snap::snapPx ((float) bands.getBottom(), physicalScale);
-                g.drawLine (xLeft, y, xRight, y, hairlineStroke);
-            }
-        }
-
-        g.restoreState();
-    }
-
-    // ---- Sub-plates: meters, bypass, filter wells, column plates ----
-    // Meter wells (use actual meter bounds expanded slightly)
-    drawPlate (g, assetSlots.inputMeter.expanded (4, 4).getIntersection (editor),  wellPlate);
-    drawPlate (g, assetSlots.outputMeter.expanded (4, 4).getIntersection (editor), wellPlate);
-
-    // Bypass plate
-    drawPlate (g, assetSlots.bypass.expanded (10, 8).getIntersection (editor), subPlate);
-
-    // Filter wells
-    drawPlate (g, assetSlots.hpfKnob.expanded (10, 10).getIntersection (editor), subPlate);
-    drawPlate (g, assetSlots.lpfKnob.expanded (10, 10).getIntersection (editor), subPlate);
-
-    // Column plates (union rects already computed in Phase 4.0)
-    drawPlate (g, assetSlots.colLF.expanded (14, 14).getIntersection (editor),  subPlate);
-    drawPlate (g, assetSlots.colLMF.expanded (14, 14).getIntersection (editor), subPlate);
-    drawPlate (g, assetSlots.colHMF.expanded (14, 14).getIntersection (editor), subPlate);
-    drawPlate (g, assetSlots.colHF.expanded (14, 14).getIntersection (editor),  subPlate);
+    // Stage 1: Tier 3 wells only (no group panels)
+    drawTier3Well (g, lfFreq.getBounds(),  physicalScale);
+    drawTier3Well (g, lfGain.getBounds(),  physicalScale);
+    drawTier3Well (g, lmfFreq.getBounds(), physicalScale);
+    drawTier3Well (g, lmfGain.getBounds(), physicalScale);
+    drawTier3Well (g, lmfQ.getBounds(),    physicalScale);
+    drawTier3Well (g, hmfFreq.getBounds(), physicalScale);
+    drawTier3Well (g, hmfGain.getBounds(), physicalScale);
+    drawTier3Well (g, hmfQ.getBounds(),    physicalScale);
+    drawTier3Well (g, hfFreq.getBounds(),  physicalScale);
+    drawTier3Well (g, hfGain.getBounds(),  physicalScale);
+    drawTier3Well (g, hpfFreq.getBounds(), physicalScale);
+    drawTier3Well (g, lpfFreq.getBounds(), physicalScale);
+    drawTier3Well (g, inTrim.getBounds(),  physicalScale);
+    drawTier3Well (g, outTrim.getBounds(), physicalScale);
 
     // ---- Keep your existing Phase 3.3 text system (headers/legends/ticks) ----
     // Phase 2: Discrete font ladder by scaleKey
@@ -607,12 +927,18 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
     // Title (centered inside header plate) - Phase 2: Snap baseline Y
     g.setColour (UIStyle::Colors::foreground.withAlpha (kTitleA));
     g.setFont (titleFont);
-    if (! headerFW.isEmpty())
+    // Title stays at existing bounds (no panel dependency)
     {
-        auto titleRect = headerFW.withTrimmedTop (6).withHeight (24);
-        const float snappedY = UIStyle::Snap::snapPx ((float) titleRect.getY(), physicalScale);
-        titleRect.setY ((int) snappedY);
-        g.drawText ("COMPASS EQ", titleRect, juce::Justification::centred, false);
+        // Reuse headerZone bounds without drawing a header plate
+        const int inset = 16;
+        auto headerFW = fullWidthFrom (assetSlots.editor, assetSlots.headerZone, inset);
+        if (! headerFW.isEmpty())
+        {
+            auto titleRect = headerFW.withTrimmedTop (6).withHeight (24);
+            const float snappedY = UIStyle::Snap::snapPx ((float) titleRect.getY(), physicalScale);
+            titleRect.setY ((int) snappedY);
+            g.drawText ("COMPASS EQ", titleRect, juce::Justification::centred, false);
+        }
     }
 
     // Column labels (driven by slot unions)
@@ -634,8 +960,51 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
     drawHeaderAbove ("IN",  inputMeter.getBounds(),  -16);
     drawHeaderAbove ("OUT", outputMeter.getBounds(), -16);
 
-    drawHeaderAbove ("IN",  inTrim.getBounds(),  -16);
-    drawHeaderAbove ("OUT", outTrim.getBounds(), -16);
+    // Bottom trim labels: move IN/OUT below knobs (centered), and remove any "TRIM" wording.
+    {
+        int labelGap = 2; // primary clipping fix (was 6)
+        const auto bypassB = globalBypass.getBounds();
+
+        auto makeLabelRect = [&] (juce::Rectangle<int> knobB, int gap, const juce::Font& f)
+        {
+            // Step 2: small descent-aware lift to avoid bottom clipping
+            int y = knobB.getBottom() + gap - (int) std::lround (f.getDescent() * 0.5f);
+
+            // Step 3: clamp inside editor bounds (no UI resize)
+            const int labelH = (int) std::ceil (f.getHeight());
+            y = juce::jmin (y, editor.getBottom() - 2 - labelH);
+
+            return juce::Rectangle<int> (knobB.getX(), y, knobB.getWidth(), labelH);
+        };
+
+        // Collision guard vs BYPASS: reduce gap, then reduce font size one step (trim labels only).
+        bool reduceFont = false;
+        auto f = headerFont;
+
+        auto inLabel = makeLabelRect (inTrim.getBounds(), labelGap, f);
+        auto outLabel = makeLabelRect (outTrim.getBounds(), labelGap, f);
+        if (inLabel.intersects (bypassB) || outLabel.intersects (bypassB))
+        {
+            // Step 1 fallback: reduce gap further (toward 0) to avoid collision
+            labelGap = 0;
+            inLabel = makeLabelRect (inTrim.getBounds(), labelGap, f);
+            outLabel = makeLabelRect (outTrim.getBounds(), labelGap, f);
+
+            if (inLabel.intersects (bypassB) || outLabel.intersects (bypassB))
+            {
+                // Last resort: reduce font size one notch (trim labels only)
+                reduceFont = true;
+                f = headerFont.withHeight (headerFont.getHeight() - 1.0f);
+                inLabel = makeLabelRect (inTrim.getBounds(), labelGap, f);
+                outLabel = makeLabelRect (outTrim.getBounds(), labelGap, f);
+            }
+        }
+
+        g.setColour (UIStyle::Colors::foreground.withAlpha (kHeaderA));
+        g.setFont (f);
+        g.drawFittedText ("IN",  inLabel,  juce::Justification::centred, 1);
+        g.drawFittedText ("OUT", outLabel, juce::Justification::centred, 1);
+    }
 
     // Legends
     drawLegendBelow ("FREQ", lfFreq.getBounds(),  2);
@@ -655,8 +1024,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
     drawLegendBelow ("FREQ", hpfFreq.getBounds(), 2);
     drawLegendBelow ("FREQ", lpfFreq.getBounds(), 2);
 
-    drawLegendBelow ("TRIM", inTrim.getBounds(),  2);
-    drawLegendBelow ("TRIM", outTrim.getBounds(), 2);
+    // (No "TRIM" legend under the bottom trim knobs per spec.)
 
     // Ticks
     drawTick (lfFreq.getBounds(),  -2);  drawTick (lfGain.getBounds(), -2);
@@ -958,7 +1326,19 @@ void CompassEQAudioProcessorEditor::resized()
     const int filtersTotalW = filterKnob + filterSpacing + filterKnob; // 128
 
     const int filtersStartX = marginL + ((usableW - filtersTotalW) / 2); // 316
-    const int filtersY = z2Y + ((z2H - filterKnob) / 2);                // 76
+    // Stage 5.4b (LOCKED): place HPF/LPF knob centers using topZoneRect:
+    // HPF_LPF_CENTER_Y = topZoneRect.y + (topZoneRect.height * 0.40)
+    // Filter bar Y geometry lock:
+    //   - labelTopPad = 28 (header yOffset=-16, height=12)
+    //   - padTop = 10, padBottom = 10
+    //   - barHeight = filterKnob + labelTopPad + padTop + padBottom = 96
+    constexpr int labelTopPad = 28;
+    constexpr int padTop = 10;
+    constexpr int padBottom = 10;
+    constexpr int filterBarH = filterKnob + labelTopPad + padTop + padBottom; // 96
+    const int filterBarTop = z2Y - (16 + padTop); // top of label area (z2Y - 16) minus padTop
+    const int filterBarCenterY = filterBarTop + (int) std::lround ((float) filterBarH * 0.40f);
+    const int filtersY = filterBarCenterY - (filterKnob / 2);
 
     hpfFreq.setBounds (filtersStartX,                        filtersY, filterKnob, filterKnob);
     lpfFreq.setBounds (filtersStartX + filterKnob + filterSpacing, filtersY, filterKnob, filterKnob);
@@ -1019,6 +1399,97 @@ void CompassEQAudioProcessorEditor::resized()
     hfFreq.setBounds (centerX (hfX, hfW, kSecondary), lfFreqY, kSecondary, kSecondary);
     hfGain.setBounds (centerX (hfX, hfW, kPrimary),   lfGainY, kPrimary,   kPrimary);
 
+    // STAGE 5.8 — EXPAND BAND SPAN TO METERS (LOCKED)
+    // Re-run the equal-width lane solver using meter-derived span, then recenter all band stacks.
+    {
+        constexpr int g = 8; // must match assetSlots expansion grid
+        const auto editor = getLocalBounds();
+
+        const auto colLFRect  = lfFreq.getBounds().getUnion (lfGain.getBounds());
+        const auto colLMFRect = lmfFreq.getBounds().getUnion (lmfGain.getBounds()).getUnion (lmfQ.getBounds());
+        const auto colHMFRect = hmfFreq.getBounds().getUnion (hmfGain.getBounds()).getUnion (hmfQ.getBounds());
+        const auto colHFRect  = hfFreq.getBounds().getUnion (hfGain.getBounds());
+
+        const auto bandsUnion =
+            colLFRect.getUnion (colLMFRect).getUnion (colHMFRect).getUnion (colHFRect);
+        const auto bandsZoneRect = bandsUnion.expanded (g * 2, g * 2).getIntersection (editor);
+
+        constexpr float meterGap = 10.0f; // LOCKED
+        const float bandsSpanLeft  = (float) inputMeter.getBounds().getRight() + meterGap;
+        const float bandsSpanRight = (float) outputMeter.getBounds().getX() - meterGap;
+        const float bandsSpanW = bandsSpanRight - bandsSpanLeft;
+
+        constexpr float dividerW = 1.0f;
+        const float laneW = (bandsSpanW - 3.0f * dividerW) / 4.0f;
+
+        const float x0 = bandsSpanLeft;
+        const float xDiv1 = x0 + laneW;
+        const float xDiv2 = x0 + 2.0f * laneW + 1.0f * dividerW;
+        const float xDiv3 = x0 + 3.0f * laneW + 2.0f * dividerW;
+
+        const float laneLFLeft  = x0;
+        const float laneLFRight = xDiv1;
+        const float laneLMFLeft  = xDiv1 + dividerW;
+        const float laneLMFRight = xDiv2;
+        const float laneHMFLeft  = xDiv2 + dividerW;
+        const float laneHMFRight = xDiv3;
+        const float laneHFLeft   = xDiv3 + dividerW;
+        const float laneHFRight  = x0 + 4.0f * laneW + 3.0f * dividerW;
+
+        auto clampDxToLane = [&] (juce::Rectangle<int> stack, float laneLeft, float laneRight, int dx) -> int
+        {
+            const int minDx = (int) std::ceil (laneLeft) - stack.getX();
+            const int maxDx = (int) std::floor (laneRight - 1.0f) - stack.getRight();
+            return juce::jlimit (minDx, maxDx, dx);
+        };
+
+        auto centerStackInLane = [&] (juce::Rectangle<int> laneStack, float laneLeft, float laneRight, auto&& translateFn)
+        {
+            const float laneCx = 0.5f * (laneLeft + laneRight);
+            int dx = (int) std::lround (laneCx - (float) laneStack.getCentreX());
+            dx = clampDxToLane (laneStack, laneLeft, laneRight, dx);
+            translateFn (dx);
+        };
+
+        // LF stack (2 knobs)
+        centerStackInLane (lfFreq.getBounds().getUnion (lfGain.getBounds()),
+                           laneLFLeft, laneLFRight,
+                           [&] (int dx)
+                           {
+                               lfFreq.setBounds (lfFreq.getBounds().translated (dx, 0));
+                               lfGain.setBounds (lfGain.getBounds().translated (dx, 0));
+                           });
+
+        // LMF stack (3 knobs)
+        centerStackInLane (lmfFreq.getBounds().getUnion (lmfGain.getBounds()).getUnion (lmfQ.getBounds()),
+                           laneLMFLeft, laneLMFRight,
+                           [&] (int dx)
+                           {
+                               lmfFreq.setBounds (lmfFreq.getBounds().translated (dx, 0));
+                               lmfGain.setBounds (lmfGain.getBounds().translated (dx, 0));
+                               lmfQ.setBounds    (lmfQ.getBounds().translated (dx, 0));
+                           });
+
+        // HMF stack (3 knobs)
+        centerStackInLane (hmfFreq.getBounds().getUnion (hmfGain.getBounds()).getUnion (hmfQ.getBounds()),
+                           laneHMFLeft, laneHMFRight,
+                           [&] (int dx)
+                           {
+                               hmfFreq.setBounds (hmfFreq.getBounds().translated (dx, 0));
+                               hmfGain.setBounds (hmfGain.getBounds().translated (dx, 0));
+                               hmfQ.setBounds    (hmfQ.getBounds().translated (dx, 0));
+                           });
+
+        // HF stack (2 knobs)
+        centerStackInLane (hfFreq.getBounds().getUnion (hfGain.getBounds()),
+                           laneHFLeft, laneHFRight,
+                           [&] (int dx)
+                           {
+                               hfFreq.setBounds (hfFreq.getBounds().translated (dx, 0));
+                               hfGain.setBounds (hfGain.getBounds().translated (dx, 0));
+                           });
+    }
+
     // ----- Zone 4: Trim + Bypass -----
     // ===== PH9.4 — Zone 4: Center BYPASS + symmetric trims =====
     {
@@ -1031,7 +1502,7 @@ void CompassEQAudioProcessorEditor::resized()
         // Vertical centering in Zone 4
         constexpr int trimSize   = 56;
         constexpr int bypassW    = 140;
-        constexpr int bypassH    = 32;
+        constexpr int bypassH    = 26; // STAGE: SSL BYPASS latch (LOCKED)
 
         const int cy = zone4.getCentreY();
 
