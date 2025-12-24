@@ -73,23 +73,26 @@ namespace
                 float freqX = 0.005f; // lower freq horizontal for streaks
                 float freqY = 0.03f;  // higher freq vertical for subtle grain
 
-                for (int oct = 0; oct < 4; ++oct) // add octave for depth
+                for (int oct = 0; oct < 5; ++oct) // add octave for depth
                 {
-                    const float nx = amp * (rnd.nextFloat() * 2.0f - 1.0f)
-                                   * std::sin ((float) x * freqX + (float) y * freqY * 0.2f);
+                    float nx = amp * (rnd.nextFloat() * 2.0f - 1.0f)
+                             * std::sin ((float) x * freqX + (float) y * freqY * 0.2f);
 
-                    const float ny = amp * (rnd.nextFloat() * 0.5f - 0.25f)
-                                   * std::cos ((float) y * freqY + (float) x * freqX * 0.1f);
+                    float ny = amp * (rnd.nextFloat() * 0.5f - 0.25f)
+                             * std::cos ((float) y * freqY + (float) x * freqX * 0.1f);
 
+                    // Stronger horizontal bias for brushed feel
+                    nx *= 1.5f;
+                    ny *= 0.5f;
                     n += nx + ny * 0.3f; // bias horizontal
 
-                    amp *= 0.45f;
+                    amp *= 0.4f;
                     freqX *= 2.2f;
                     freqY *= 1.8f;
                 }
 
                 n = (n + 1.5f) * 0.4f; // adjust range for low contrast
-                const uint8_t v = (uint8_t) juce::jlimit (0, 255, (int) (128.0f + n * 24.0f)); // ~9% deviation around mid-gray
+                const uint8_t v = (uint8_t) juce::jlimit (0, 255, (int) (128.0f + n * 32.0f)); // ~12% deviation around mid-gray
                 noise.setPixelAt (x, y, juce::Colour (v, v, v));
             }
         }
@@ -349,9 +352,9 @@ namespace
             // Ultra-subtle vignette (lens/light falloff on the physical plate), under everything
             {
                 juce::ColourGradient vignette (juce::Colours::transparentBlack, b.getCentreX(), b.getCentreY(),
-                                               juce::Colours::black.withAlpha (0.08f), b.getCentreX(), b.getCentreY() + b.getHeight() * 0.75f,
-                                               true /* radial */);
-                vignette.addColour (0.5, juce::Colours::transparentBlack);
+                                               juce::Colours::black.withAlpha (0.08f), b.getCentreX(), b.getCentreY(),
+                                               true); // radial
+                vignette.multiplyOpacity (0.05f); // shallow
                 g.setGradientFill (vignette);
                 g.fillRect (b);
             }
@@ -405,15 +408,13 @@ namespace
                     if (panel.isEmpty())
                         return;
 
-                    // Phase 2B: discipline gradients — reduce intensity to ~20% and make ramp much shallower
+                    // Phase 2B (Option 2): alpha ×0.2 AND shallower contrast (pull top/bottom closer)
                     const auto tTop = cTop.withMultipliedAlpha (0.20f);
                     const auto tBot = cBot.withMultipliedAlpha (0.20f);
-                    const auto mid = tTop.interpolatedWith (tBot, 0.5f);
-                    const auto topShallow = mid.darker (0.10f);
-                    const auto botShallow = mid;
+                    const auto mid = tTop.interpolatedWith (tBot, 0.4f); // pull toward darker
 
-                    juce::ColourGradient grad (topShallow, panel.getCentreX(), panel.getY(),
-                                               botShallow, panel.getCentreX(), panel.getBottom(),
+                    juce::ColourGradient grad (mid, panel.getCentreX(), panel.getY(),
+                                               tBot, panel.getCentreX(), panel.getBottom(),
                                                false);
                     g.setGradientFill (grad);
                     g.fillRoundedRectangle (panel, 12.0f);

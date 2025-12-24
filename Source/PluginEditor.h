@@ -66,7 +66,8 @@ private:
 
             // Meter background (dark -> slightly lighter), rounded like hardware inset
             {
-                juce::ColourGradient bgGrad (juce::Colours::black, bounds.getX(), bounds.getBottom(),
+                // Phase 2 refinement: low-contrast meter inset (no "brighter" top)
+                juce::ColourGradient bgGrad (juce::Colours::darkgrey, bounds.getX(), bounds.getBottom(),
                                              juce::Colours::darkgrey, bounds.getX(), bounds.getY(),
                                              false);
                 g.setGradientFill (bgGrad);
