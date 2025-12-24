@@ -459,6 +459,33 @@ namespace
         strokeArcDeg ( -5.0f,  85.0f, juce::Colours::black, juce::jmin (UIStyle::occlusionAlphaMax, 0.18f));
     }
 
+    static inline void drawBandWell (juce::Graphics& g, juce::Rectangle<int> columnRect, float physicalScale)
+    {
+        if (columnRect.isEmpty()) return;
+
+        // Reduce slightly for breathing room (match current knob spacing feel)
+        auto well = columnRect.toFloat().reduced (8.0f, 12.0f);
+
+        if (well.isEmpty()) return;
+
+        // 1. Fill: dark recessed color (match existing wellCol)
+        g.setColour (gray8 (26));
+        g.fillRoundedRectangle (well, 12.0f);
+
+        // 2. Rim stroke: 1px dark (~#111)
+        g.setColour (juce::Colour (0xFF111111));
+        g.drawRoundedRectangle (well, 12.0f, 1.0f);
+
+        // 3. Inner shadow: downward offset 3px, blur 6px, opacity 25%
+        juce::DropShadow shadow (juce::Colours::black.withAlpha (0.25f), 6, { 0, 3 });
+        shadow.drawForRectangle (g, well.getSmallestIntegerContainer());
+
+        // 4. Top edge highlight: 2px white @10% opacity, top edge only
+        const float px = juce::jmax (1.0f, 1.0f / physicalScale);
+        g.setColour (juce::Colours::white.withAlpha (0.10f));
+        g.drawLine (well.getX(), well.getY(), well.getX() + well.getWidth(), well.getY(), 2.0f * px);
+    }
+
     // ===== Waves SSL-style knobs (vector; no assets) =====
     // Cached base knob rendering (no pointer), drawn + pointer line on top per-frame.
     // This intentionally uses gradients to achieve the classic SSL bevel/metallic depth.
@@ -924,21 +951,11 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
     // ---- Global border ----
     // Stage 5.5 lock: outside colored lanes is neutral black; do not draw non-black plate chrome here.
 
-    // Stage 1: Tier 3 wells only (no group panels)
-    drawTier3Well (g, lfFreq.getBounds(),  physicalScale);
-    drawTier3Well (g, lfGain.getBounds(),  physicalScale);
-    drawTier3Well (g, lmfFreq.getBounds(), physicalScale);
-    drawTier3Well (g, lmfGain.getBounds(), physicalScale);
-    drawTier3Well (g, lmfQ.getBounds(),    physicalScale);
-    drawTier3Well (g, hmfFreq.getBounds(), physicalScale);
-    drawTier3Well (g, hmfGain.getBounds(), physicalScale);
-    drawTier3Well (g, hmfQ.getBounds(),    physicalScale);
-    drawTier3Well (g, hfFreq.getBounds(),  physicalScale);
-    drawTier3Well (g, hfGain.getBounds(),  physicalScale);
-    drawTier3Well (g, hpfFreq.getBounds(), physicalScale);
-    drawTier3Well (g, lpfFreq.getBounds(), physicalScale);
-    drawTier3Well (g, inTrim.getBounds(),  physicalScale);
-    drawTier3Well (g, outTrim.getBounds(), physicalScale);
+    // Phase 1 depth model: rectangular recessed band wells (replace per-knob circular wells)
+    drawBandWell (g, assetSlots.colLF,  physicalScale);
+    drawBandWell (g, assetSlots.colLMF, physicalScale);
+    drawBandWell (g, assetSlots.colHMF, physicalScale);
+    drawBandWell (g, assetSlots.colHF,  physicalScale);
 
     // ---- Keep your existing Phase 3.3 text system (headers/legends/ticks) ----
     // Phase 2: Discrete font ladder by scaleKey
