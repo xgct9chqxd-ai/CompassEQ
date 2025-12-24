@@ -166,25 +166,34 @@ namespace UIStyle
     // Phase 3: Static prebuilt tables to avoid per-paint construction
     namespace FontLadder
     {
-        // Prebuilt font tables for 1.00 and 2.00 scale keys (ODR-safe inline variables)
-        inline const juce::FontOptions titleFont_1_00  { 18.0f, juce::Font::bold };
-        inline const juce::FontOptions titleFont_2_00  { 18.0f, juce::Font::bold };
-        inline const juce::FontOptions headerFont_1_00 { 11.0f, juce::Font::bold };
-        inline const juce::FontOptions headerFont_2_00 { 11.0f, juce::Font::bold };
-        inline const juce::FontOptions microFont_1_00  { 9.0f };
-        inline const juce::FontOptions microFont_2_00  { 9.0f };
+        // Condensed sans-serif system-safe family:
+        // - Prefer Arial Narrow when available
+        // - Fallback to default sans serif
+        inline juce::Font makeCondensed (float height, int styleFlags)
+        {
+            // JUCE will fall back to a system font if the requested face isn't available.
+            return juce::Font ("Arial Narrow", height, styleFlags);
+        }
 
-        inline const juce::FontOptions& titleFont (float scaleKey)
+        // Prebuilt font tables for 1.00 and 2.00 scale keys (ODR-safe inline variables)
+        inline const juce::Font titleFont_1_00  = makeCondensed (18.0f, juce::Font::bold);
+        inline const juce::Font titleFont_2_00  = makeCondensed (18.0f, juce::Font::bold);
+        inline const juce::Font headerFont_1_00 = makeCondensed (11.0f, juce::Font::bold);
+        inline const juce::Font headerFont_2_00 = makeCondensed (11.0f, juce::Font::bold);
+        inline const juce::Font microFont_1_00  = makeCondensed (9.0f,  juce::Font::plain);
+        inline const juce::Font microFont_2_00  = makeCondensed (9.0f,  juce::Font::plain);
+
+        inline const juce::Font& titleFont (float scaleKey)
         {
             return (scaleKey >= 1.75f) ? titleFont_2_00 : titleFont_1_00;
         }
 
-        inline const juce::FontOptions& headerFont (float scaleKey)
+        inline const juce::Font& headerFont (float scaleKey)
         {
             return (scaleKey >= 1.75f) ? headerFont_2_00 : headerFont_1_00;
         }
 
-        inline const juce::FontOptions& microFont (float scaleKey)
+        inline const juce::Font& microFont (float scaleKey)
         {
             return (scaleKey >= 1.75f) ? microFont_2_00 : microFont_1_00;
         }

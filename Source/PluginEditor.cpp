@@ -1097,15 +1097,18 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
                                         float baseAlpha,
                                         juce::Colour mainCol)
     {
+        const auto ink = juce::Colour (0xFFE8E8E8);
+
         // 1) Shadow (engraved depth)
-        g.setColour (juce::Colours::black.withAlpha (juce::jlimit (0.0f, 1.0f, 0.75f * baseAlpha)));
+        g.setColour (juce::Colours::black.withAlpha (juce::jlimit (0.0f, 1.0f, 0.80f * baseAlpha)));
         g.drawFittedText (txt,
                           juce::roundToInt ((float) x + 1.2f * px),
                           juce::roundToInt ((float) y + 1.2f * px),
                           w, h, just, maxLines);
 
         // 2) Main fill (slightly brighter)
-        g.setColour (mainCol.withAlpha (juce::jlimit (0.0f, 1.0f, 1.00f * baseAlpha)));
+        juce::ignoreUnused (mainCol);
+        g.setColour (ink.withAlpha (juce::jlimit (0.0f, 1.0f, 1.00f * baseAlpha)));
         g.drawFittedText (txt, x, y, w, h, just, maxLines);
 
         // 3) Subtle bevel (thin bright pass)
@@ -1116,16 +1119,16 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
                           w, h, just, maxLines);
 
         // 4) Top highlight (printed/engraved catch-light)
-        g.setColour (juce::Colours::white.withAlpha (juce::jlimit (0.0f, 1.0f, 0.35f * baseAlpha)));
+        g.setColour (juce::Colours::white.withAlpha (juce::jlimit (0.0f, 1.0f, 0.40f * baseAlpha)));
         g.drawFittedText (txt,
                           x,
-                          juce::roundToInt ((float) y - 0.8f * px),
+                          juce::roundToInt ((float) y - 0.6f * px),
                           w, h, just, maxLines);
     };
 
     auto drawHeaderAbove = [&g, &headerFont, kHeaderA, physicalScale, drawEngravedFitted] (const char* txt, juce::Rectangle<int> b, int yOffset)
     {
-        g.setFont (headerFont);
+        g.setFont (headerFont.withExtraKerningFactor (-0.05f));
         // Phase 2: Snap baseline Y
         const float snappedY = UIStyle::Snap::snapPx ((float) (b.getY() + yOffset), physicalScale);
         drawEngravedFitted (txt, b.getX(), (int) snappedY, b.getWidth(), 12,
@@ -1134,7 +1137,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
 
     auto drawLegendBelow = [&g, &microFont, kHeaderA, physicalScale, drawEngravedFitted] (const char* txt, juce::Rectangle<int> b, int yOffset)
     {
-        g.setFont (microFont);
+        g.setFont (microFont.withExtraKerningFactor (-0.075f));
         // Phase 2: Snap baseline Y
         const float snappedY = UIStyle::Snap::snapPx ((float) (b.getBottom() + yOffset), physicalScale);
         drawEngravedFitted (txt, b.getX(), (int) snappedY, b.getWidth(), 12,
@@ -1146,13 +1149,13 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
         const float cx = UIStyle::Snap::snapPx ((float) b.getCentreX(), physicalScale);
         const float y0 = UIStyle::Snap::snapPx ((float) (b.getY() + yOffset), physicalScale);
         const float y1 = UIStyle::Snap::snapPx ((float) (b.getY() + yOffset + 6), physicalScale);
-        g.setColour (UIStyle::Colors::foreground.withAlpha (kTickA));
+        g.setColour (UIStyle::Colors::foreground.withAlpha (juce::jmin (1.0f, kTickA * 1.2f)));
         g.drawLine (cx, y0, cx, y1, hairlineStroke);
     };
 
     auto drawColLabel = [&g, &headerFont, kHeaderA, physicalScale, drawEngravedFitted] (const char* txt, juce::Rectangle<int> columnBounds, int y)
     {
-        g.setFont (headerFont);
+        g.setFont (headerFont.withExtraKerningFactor (-0.05f));
         // Phase 2: Snap baseline Y
         const float snappedY = UIStyle::Snap::snapPx ((float) y, physicalScale);
         drawEngravedFitted (txt, columnBounds.getX(), (int) snappedY, columnBounds.getWidth(), 14,
@@ -1167,7 +1170,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
         const float snappedY = UIStyle::Snap::snapPx ((float) titleRect.getY(), physicalScale);
         titleRect.setY ((int) snappedY);
 
-        g.setFont (juce::Font (titleFont).withHeight (20.0f));
+        g.setFont (titleFont.withHeight (20.0f));
         drawEngravedFitted ("Compass EQ",
                             titleRect.getX(), titleRect.getY(), titleRect.getWidth(), titleRect.getHeight(),
                             juce::Justification::left, 1, kTitleA, juce::Colours::white);
@@ -1269,7 +1272,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
         const float endRad   = juce::MathConstants<float>::pi * 1.5f + juce::MathConstants<float>::pi * 0.833f;
         const float range    = endRad - startRad;
 
-        auto drawScaleMarkings = [&g, physicalScale, drawEngravedFitted, kMicroA, startRad, range] (juce::Rectangle<int> knobBounds,
+        auto drawScaleMarkings = [&g, physicalScale, drawEngravedFitted, &microFont, kMicroA, startRad, range] (juce::Rectangle<int> knobBounds,
                                                                                                      const char* const* numbers,
                                                                                                      int numberCount)
         {
@@ -1303,6 +1306,10 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
             if (numbers == nullptr || numberCount < 2)
                 return;
 
+            // Micro font: slight negative tracking for silkscreen-like density
+            g.setFont (microFont.withExtraKerningFactor (-0.075f));
+            const float px1 = 1.0f / juce::jmax (1.0f, physicalScale);
+
             for (int i = 0; i < numberCount; ++i)
             {
                 const float t = (float) i / (float) (numberCount - 1);
@@ -1319,6 +1326,15 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
                 drawEngravedFitted (numbers[i], xi, yi, w, h,
                                     juce::Justification::centred, 1,
                                     kMicroA, juce::Colours::white.withAlpha (0.85f));
+
+                // Scale numbers: subtle bottom ink pass for printed depth
+                g.setColour (juce::Colours::black.withAlpha (0.10f));
+                g.drawFittedText (numbers[i],
+                                  xi,
+                                  (int) std::lround ((float) yi + 1.0f * px1),
+                                  w, h,
+                                  juce::Justification::centred,
+                                  1);
             }
         };
 

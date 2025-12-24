@@ -296,7 +296,7 @@ private:
             auto bounds = getLocalBounds().toFloat();
             const float px = 1.0f / physicalScale;
             const auto& font = UIStyle::FontLadder::headerFont (scaleKey);
-            g.setFont (juce::Font (font).withHeight (font.getHeight() * 1.1f));
+            g.setFont (font.withHeight (font.getHeight() * 1.1f).withExtraKerningFactor (-0.05f));
 
             // Snap baseline Y
             const float snappedY = UIStyle::Snap::snapPx (bounds.getY(), physicalScale);
@@ -307,7 +307,7 @@ private:
             g.drawText (juce::StringRef (textBuffer), bounds.translated (1.2f * px, 1.2f * px), juce::Justification::centred, false);
 
             // 2) Main
-            g.setColour (juce::Colours::white);
+            g.setColour (juce::Colour (0xFFE8E8E8));
             g.drawText (juce::StringRef (textBuffer), bounds, juce::Justification::centred, false);
 
             // 3) Top highlight
@@ -393,15 +393,19 @@ private:
             const auto txt = getButtonText();
             const auto just = juce::Justification::centred;
 
-            g.setFont (juce::Font (12.0f, juce::Font::bold));
+            g.setFont (UIStyle::FontLadder::headerFont (1.0f).withHeight (12.0f).withExtraKerningFactor (-0.05f));
 
-            g.setColour (juce::Colours::black.withAlpha (0.70f));
+            // Phase 4 silkscreen/engraved text (match drawEngravedFitted tuning)
+            g.setColour (juce::Colours::black.withAlpha (0.80f));
             g.drawText (txt, textArea.translated (1.2f, 1.2f), just, false);
 
-            g.setColour (juce::Colours::whitesmoke.withAlpha (0.95f));
+            g.setColour (juce::Colour (0xFFE8E8E8).withAlpha (0.98f));
             g.drawText (txt, textArea, just, false);
 
-            g.setColour (juce::Colours::white.withAlpha (0.20f));
+            // Subtle bevel + top highlight
+            g.setColour (juce::Colours::white.withAlpha (0.15f));
+            g.drawText (txt, textArea.translated (0.0f, -0.5f), just, false);
+            g.setColour (juce::Colours::white.withAlpha (0.40f));
             g.drawText (txt, textArea.translated (0.0f, -0.6f), just, false);
         }
     };
