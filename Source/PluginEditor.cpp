@@ -587,14 +587,6 @@ namespace
                 shadow.drawForPath (gg, p);
             }
 
-            // 0b) Tight contact shadow (suggests knob sitting on plate)
-            {
-                juce::DropShadow contact (juce::Colours::black.withAlpha (0.20f), 3, { 0, 2 });
-                juce::Path p;
-                p.addEllipse (bounds.reduced (1.0f));
-                contact.drawForPath (gg, p);
-            }
-
             // 1) Outer chrome rim (keep neutral)
             {
                 juce::ColourGradient rimGrad (juce::Colours::whitesmoke, cx, cy - radius * 0.80f,
@@ -604,20 +596,33 @@ namespace
                 gg.fillEllipse (bounds);
             }
 
-            // 2) Colored knob body — bolder cap (reference match)
+            // 2) Band accent ring + neutral body (band knobs only; filters/trim stay neutral via bandColour input)
             auto knobBounds = bounds.reduced (juce::jmax (6.0f, radius * 0.18f));
             {
-                // Base solid (boosted)
-                const auto base = bandColour.withMultipliedSaturation (1.8f).brighter (0.20f);
-                gg.setColour (base);
-                gg.fillEllipse (knobBounds);
+                const auto ringBounds = knobBounds.reduced (4.0f);
+                const auto bodyBounds = knobBounds.reduced (6.0f);
 
-                // Depth: darker bottom, lighter top
-                juce::ColourGradient bodyGrad (base.darker (0.20f),   cx, cy + radius * 0.30f,
-                                               base.brighter (0.30f), cx, cy - radius * 0.50f,
-                                               false);
-                gg.setGradientFill (bodyGrad);
-                gg.fillEllipse (knobBounds);
+                // Thin colored ring (accent)
+                if (! ringBounds.isEmpty())
+                {
+                    const auto ringBase = bandColour;
+                    juce::ColourGradient ringGrad (ringBase.brighter (0.08f), cx, cy - radius * 0.35f,
+                                                   ringBase.darker (0.10f),  cx, cy + radius * 0.35f,
+                                                   false);
+                    gg.setGradientFill (ringGrad);
+                    gg.fillEllipse (ringBounds);
+                }
+
+                // Neutral body (matte hardware)
+                if (! bodyBounds.isEmpty())
+                {
+                    const auto bodyBase = gray8 (34);
+                    juce::ColourGradient bodyGrad (bodyBase.brighter (0.10f), cx, cy - radius * 0.45f,
+                                                   bodyBase.darker (0.18f),  cx, cy + radius * 0.35f,
+                                                   false);
+                    gg.setGradientFill (bodyGrad);
+                    gg.fillEllipse (bodyBounds);
+                }
             }
 
             // 3) Gloss stronger for plastic shine
@@ -686,11 +691,11 @@ namespace
         const auto p1 = juce::Point<float> (c.x + std::cos (angleRad) * len,
                                             c.y + std::sin (angleRad) * len);
 
-        // Pointer / indicator (bright, crisp, scale-aware). Draw a subtle under-stroke for depth.
+        // Pointer / indicator (bright, crisp, scale-aware). Draw a dark under-stroke for depth.
         const float w = juce::jmax (1.6f, 1.6f * scaleKey);
-        g.setColour (juce::Colours::black.withAlpha (0.30f));
-        g.drawLine (c.x, c.y, p1.x, p1.y, w + juce::jmax (0.8f, 0.8f * scaleKey));
-        g.setColour (juce::Colours::whitesmoke.withAlpha (0.96f));
+        g.setColour (juce::Colours::black.withAlpha (0.35f));
+        g.drawLine (c.x, c.y, p1.x, p1.y, w + 0.5f);
+        g.setColour (juce::Colours::white.withAlpha (0.98f));
         g.drawLine (c.x, c.y, p1.x, p1.y, w);
 
         // Center hub (small chrome)
@@ -758,7 +763,7 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider (
 
         // OKLab hue source + boost for solid cap look
         auto temp = stage5_bandHueToSectionBg_OkLabLinear (hueDeg, juce::Colours::darkgrey);
-        return temp.withMultipliedSaturation (1.8f).brighter (0.20f);
+        return temp.withMultipliedSaturation (1.8f * 0.75f).brighter (0.20f); // desaturate 25%
     };
 
     juce::Colour bandColour = juce::Colours::darkgrey.brighter (0.30f);
@@ -781,7 +786,21 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider (
 
     gRotaryStartAngleRad = rotaryStartAngle;
     gRotaryEndAngleRad = rotaryEndAngle;
+
+    // Crisp indicators: request low-resampling before knob draw (affects image draw + subsequent line)
+    g.setImageResamplingQuality (juce::Graphics::lowResamplingQuality);
     drawSSLKnob (g, bounds, sliderPos, scaleKey, bandColour);
+
+    // Tight contact shadow (single, post-image; avoids cached DPI artifacts)
+    {
+        juce::DropShadow contact (juce::Colours::black.withAlpha (0.22f), 2, { 0, 2 });
+        juce::Path p;
+        p.addEllipse (bounds.reduced (2.0f));
+        contact.drawForPath (g, p);
+    }
+
+    // Restore default-ish resampling quality for anything drawn after this
+    g.setImageResamplingQuality (juce::Graphics::mediumResamplingQuality);
 }
 
 CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor (CompassEQAudioProcessor& p)
@@ -1066,7 +1085,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
                                         juce::Colour mainCol)
     {
         // 1) Shadow (engraved depth)
-        g.setColour (juce::Colours::black.withAlpha (juce::jlimit (0.0f, 1.0f, 0.65f * baseAlpha)));
+        g.setColour (juce::Colours::black.withAlpha (juce::jlimit (0.0f, 1.0f, 0.75f * baseAlpha)));
         g.drawFittedText (txt,
                           juce::roundToInt ((float) x + 1.2f * px),
                           juce::roundToInt ((float) y + 1.2f * px),
@@ -1076,8 +1095,15 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
         g.setColour (mainCol.withAlpha (juce::jlimit (0.0f, 1.0f, 1.00f * baseAlpha)));
         g.drawFittedText (txt, x, y, w, h, just, maxLines);
 
-        // 3) Top highlight (machined shine)
-        g.setColour (juce::Colours::white.withAlpha (juce::jlimit (0.0f, 1.0f, 0.30f * baseAlpha)));
+        // 3) Subtle bevel (thin bright pass)
+        g.setColour (juce::Colours::white.withAlpha (juce::jlimit (0.0f, 1.0f, 0.15f * baseAlpha)));
+        g.drawFittedText (txt,
+                          x,
+                          juce::roundToInt ((float) y - 0.5f * px),
+                          w, h, just, maxLines);
+
+        // 4) Top highlight (printed/engraved catch-light)
+        g.setColour (juce::Colours::white.withAlpha (juce::jlimit (0.0f, 1.0f, 0.35f * baseAlpha)));
         g.drawFittedText (txt,
                           x,
                           juce::roundToInt ((float) y - 0.8f * px),
