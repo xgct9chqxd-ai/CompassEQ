@@ -459,31 +459,37 @@ namespace
         strokeArcDeg ( -5.0f,  85.0f, juce::Colours::black, juce::jmin (UIStyle::occlusionAlphaMax, 0.18f));
     }
 
-    static inline void drawBandWell (juce::Graphics& g, juce::Rectangle<int> columnRect, float physicalScale)
+    static void drawBandWell (juce::Graphics& g, juce::Rectangle<int> columnRect, float physicalScale)
     {
         if (columnRect.isEmpty()) return;
 
-        // Reduce slightly for breathing room (match current knob spacing feel)
+        // Keep existing reduction for breathing room
         auto well = columnRect.toFloat().reduced (8.0f, 12.0f);
 
         if (well.isEmpty()) return;
 
-        // 1. Fill: dark recessed color (match existing wellCol)
+        // 1. Recessed fill — keep dark
         g.setColour (gray8 (26));
         g.fillRoundedRectangle (well, 12.0f);
 
-        // 2. Rim stroke: 1px dark (~#111)
+        // 2. Rim stroke — 1px very dark (exact #111)
         g.setColour (juce::Colour (0xFF111111));
         g.drawRoundedRectangle (well, 12.0f, 1.0f);
 
-        // 3. Inner shadow: downward offset 3px, blur 6px, opacity 25%
-        juce::DropShadow shadow (juce::Colours::black.withAlpha (0.25f), 6, { 0, 3 });
+        // 3. Inner shadow — tighter and stronger for machined depth
+        //    Opacity 28% (within 20-30% spec), blur 5px (within 4-8px), downward offset 3px
+        juce::DropShadow shadow (juce::Colours::black.withAlpha (0.28f), 5, { 0, 3 });
         shadow.drawForRectangle (g, well.getSmallestIntegerContainer());
 
-        // 4. Top edge highlight: 2px white @10% opacity, top edge only
+        // 4. Top edge highlight — sharper and only on absolute top
+        //    1.5px white @12% opacity (within 1-2px / ~10% spec), top horizontal only
         const float px = juce::jmax (1.0f, 1.0f / physicalScale);
-        g.setColour (juce::Colours::white.withAlpha (0.10f));
-        g.drawLine (well.getX(), well.getY(), well.getX() + well.getWidth(), well.getY(), 2.0f * px);
+        g.setColour (juce::Colours::white.withAlpha (0.12f));
+        g.drawLine (well.getX(), well.getY(), well.getX() + well.getWidth(), well.getY(), 1.5f * px);
+
+        // Optional subtle bottom darkening to enhance recess (very light, no new elements)
+        g.setColour (juce::Colours::black.withAlpha (0.08f));
+        g.drawLine (well.getX(), well.getBottom() - px, well.getX() + well.getWidth(), well.getBottom() - px, 1.0f * px);
     }
 
     // ===== Waves SSL-style knobs (vector; no assets) =====
