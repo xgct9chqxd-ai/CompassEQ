@@ -67,18 +67,29 @@ namespace
         {
             for (int x = 0; x < size; ++x)
             {
-                // Very soft Perlin-like noise (low frequency, low contrast)
+                // Very soft Perlin-like noise with horizontal directionality (brushed feel)
                 float n = 0.0f;
                 float amp = 1.0f;
-                float freq = 0.015f;
-                for (int oct = 0; oct < 3; ++oct)
+                float freqX = 0.005f; // lower freq horizontal for streaks
+                float freqY = 0.03f;  // higher freq vertical for subtle grain
+
+                for (int oct = 0; oct < 4; ++oct) // add octave for depth
                 {
-                    n += amp * rnd.nextFloat() * std::sin ((float) x * freq) * std::cos ((float) y * freq);
-                    amp *= 0.5f;
-                    freq *= 2.0f;
+                    const float nx = amp * (rnd.nextFloat() * 2.0f - 1.0f)
+                                   * std::sin ((float) x * freqX + (float) y * freqY * 0.2f);
+
+                    const float ny = amp * (rnd.nextFloat() * 0.5f - 0.25f)
+                                   * std::cos ((float) y * freqY + (float) x * freqX * 0.1f);
+
+                    n += nx + ny * 0.3f; // bias horizontal
+
+                    amp *= 0.45f;
+                    freqX *= 2.2f;
+                    freqY *= 1.8f;
                 }
-                n = (n + 1.0f) * 0.5f; // 0..1 range
-                uint8_t v = (uint8_t) juce::jlimit (0, 255, (int) (n * 16)); // very low contrast (~8% max deviation)
+
+                n = (n + 1.5f) * 0.4f; // adjust range for low contrast
+                const uint8_t v = (uint8_t) juce::jlimit (0, 255, (int) (128.0f + n * 24.0f)); // ~9% deviation around mid-gray
                 noise.setPixelAt (x, y, juce::Colour (v, v, v));
             }
         }
@@ -321,8 +332,8 @@ namespace
         // Brushed metal background gradient (dark grey -> warm medium grey) + faint horizontal brush lines.
         {
             const auto b = editor.toFloat();
-            juce::ColourGradient metalGrad (juce::Colour (0xFF323232), b.getX(), b.getY(),
-                                            juce::Colour (0xFF424242), b.getX(), b.getBottom(),
+            juce::ColourGradient metalGrad (juce::Colour (0xFF303030), b.getX(), b.getY(),
+                                            juce::Colour (0xFF404040), b.getX(), b.getBottom(),
                                             false);
             g.setGradientFill (metalGrad);
             g.fillRect (b);
@@ -332,8 +343,18 @@ namespace
                 g.drawLine ((float) editor.getX(), (float) y, (float) editor.getRight(), (float) y, 0.5f);
 
             // Subtle matte noise overlay on faceplate only
-            g.setTiledImageFill (matteNoise, 0, 0, 0.04f); // opacity 4% (within 2-6% spec)
+            g.setTiledImageFill (matteNoise, 0, 0, 0.05f); // opacity 5% (within 2-6% spec)
             g.fillRect (editor); // editor = full bounds
+
+            // Ultra-subtle vignette (lens/light falloff on the physical plate), under everything
+            {
+                juce::ColourGradient vignette (juce::Colours::transparentBlack, b.getCentreX(), b.getCentreY(),
+                                               juce::Colours::black.withAlpha (0.08f), b.getCentreX(), b.getCentreY() + b.getHeight() * 0.75f,
+                                               true /* radial */);
+                vignette.addColour (0.5, juce::Colours::transparentBlack);
+                g.setGradientFill (vignette);
+                g.fillRect (b);
+            }
         }
 
         // STAGE 5 — ROLL-OUT TO ALL EQ BANDS (LF / LMF / HMF / HF)
@@ -384,8 +405,15 @@ namespace
                     if (panel.isEmpty())
                         return;
 
-                    juce::ColourGradient grad (cTop, panel.getCentreX(), panel.getY(),
-                                               cBot, panel.getCentreX(), panel.getBottom(),
+                    // Phase 2B: discipline gradients — reduce intensity to ~20% and make ramp much shallower
+                    const auto tTop = cTop.withMultipliedAlpha (0.20f);
+                    const auto tBot = cBot.withMultipliedAlpha (0.20f);
+                    const auto mid = tTop.interpolatedWith (tBot, 0.5f);
+                    const auto topShallow = mid.darker (0.10f);
+                    const auto botShallow = mid;
+
+                    juce::ColourGradient grad (topShallow, panel.getCentreX(), panel.getY(),
+                                               botShallow, panel.getCentreX(), panel.getBottom(),
                                                false);
                     g.setGradientFill (grad);
                     g.fillRoundedRectangle (panel, 12.0f);
@@ -587,7 +615,7 @@ namespace
             {
                 juce::Path highlight;
                 highlight.addEllipse (knobBounds.reduced (5.0f));
-                gg.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.45f), cx, cy - radius * 0.70f,
+                gg.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.30f), cx, cy - radius * 0.70f,
                                                           juce::Colours::transparentWhite,       cx, cy + radius * 0.10f,
                                                           false));
                 gg.fillPath (highlight);

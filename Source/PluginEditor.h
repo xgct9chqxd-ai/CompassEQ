@@ -67,7 +67,7 @@ private:
             // Meter background (dark -> slightly lighter), rounded like hardware inset
             {
                 juce::ColourGradient bgGrad (juce::Colours::black, bounds.getX(), bounds.getBottom(),
-                                             juce::Colours::darkgrey.brighter (0.10f), bounds.getX(), bounds.getY(),
+                                             juce::Colours::darkgrey, bounds.getX(), bounds.getY(),
                                              false);
                 g.setGradientFill (bgGrad);
                 g.fillRoundedRectangle (bounds, 4.0f);
