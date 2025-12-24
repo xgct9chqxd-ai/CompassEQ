@@ -587,10 +587,18 @@ namespace
                 shadow.drawForPath (gg, p);
             }
 
+            // 0b) Tight contact shadow (suggests knob sitting on plate)
+            {
+                juce::DropShadow contact (juce::Colours::black.withAlpha (0.20f), 3, { 0, 2 });
+                juce::Path p;
+                p.addEllipse (bounds.reduced (1.0f));
+                contact.drawForPath (gg, p);
+            }
+
             // 1) Outer chrome rim (keep neutral)
             {
                 juce::ColourGradient rimGrad (juce::Colours::whitesmoke, cx, cy - radius * 0.80f,
-                                              juce::Colours::darkgrey.darker (0.60f), cx, cy + radius * 0.80f,
+                                              juce::Colours::darkgrey, cx, cy + radius * 0.80f,
                                               false);
                 gg.setGradientFill (rimGrad);
                 gg.fillEllipse (bounds);
@@ -616,10 +624,19 @@ namespace
             {
                 juce::Path highlight;
                 highlight.addEllipse (knobBounds.reduced (5.0f));
-                gg.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.30f), cx, cy - radius * 0.70f,
+                gg.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.22f), cx, cy - radius * 0.70f,
                                                           juce::Colours::transparentWhite,       cx, cy + radius * 0.10f,
                                                           false));
                 gg.fillPath (highlight);
+            }
+
+            // 3b) Subtle rim highlight (cap edge catch-light; top-left biased)
+            {
+                juce::ColourGradient rimHigh (juce::Colours::white.withAlpha (0.12f), cx, cy - radius * 0.6f,
+                                              juce::Colours::transparentWhite,       cx, cy + radius * 0.2f,
+                                              false);
+                gg.setGradientFill (rimHigh);
+                gg.fillEllipse (knobBounds.reduced (2.0f));
             }
 
             // 4) Inner rim shadow (keep subtle)
@@ -669,8 +686,11 @@ namespace
         const auto p1 = juce::Point<float> (c.x + std::cos (angleRad) * len,
                                             c.y + std::sin (angleRad) * len);
 
-        const float w = juce::jmax (4.0f, 4.0f * scaleKey);
-        g.setColour (juce::Colours::white.withAlpha (0.92f));
+        // Pointer / indicator (bright, crisp, scale-aware). Draw a subtle under-stroke for depth.
+        const float w = juce::jmax (1.6f, 1.6f * scaleKey);
+        g.setColour (juce::Colours::black.withAlpha (0.30f));
+        g.drawLine (c.x, c.y, p1.x, p1.y, w + juce::jmax (0.8f, 0.8f * scaleKey));
+        g.setColour (juce::Colours::whitesmoke.withAlpha (0.96f));
         g.drawLine (c.x, c.y, p1.x, p1.y, w);
 
         // Center hub (small chrome)
