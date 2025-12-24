@@ -25,10 +25,10 @@ namespace UIStyle
         // ===== Stage 5 hue sources (LOCKED) =====
         // Knob rendering must remain neutral; backgrounds may use explicit band hue constants.
         // These are hue-angle locks (OKLCH hue degrees) and are the ONLY legal hue sources for band backgrounds.
-        // Stage 5.9 band → hue mapping (LOCKED)
-        // LF is neutral (no hue): special sentinel (<0) interpreted by the Stage-5 background fill as chroma=0.
-        constexpr float bandHueLF  = -1.0f;  // neutral / black lane (C = 0)
-        constexpr float bandHueLMF = 240.0f; // blue
+        // Band → hue mapping (compass scheme)
+        // LF = blue, LMF = purple, HMF = green, HF = red
+        constexpr float bandHueLF  = 240.0f; // blue
+        constexpr float bandHueLMF = 300.0f; // purple (more magenta-leaning to avoid reading blue after gamut/boost)
         constexpr float bandHueHMF = 120.0f; // green
         constexpr float bandHueHF  =   0.0f; // red
     }

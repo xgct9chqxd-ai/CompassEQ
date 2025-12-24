@@ -62,12 +62,16 @@ private:
             const float physicalScale = juce::jmax (1.0f, (float) g.getInternalContext().getPhysicalPixelScaleFactor());
 
             const auto b = getLocalBounds();
-
-            // Hard occlude anything behind the meter lane
-            g.setColour (juce::Colours::black);
-            g.fillRect (b);
-
             const auto bounds = b.toFloat().reduced (1.0f);
+
+            // Meter background (dark -> slightly lighter), rounded like hardware inset
+            {
+                juce::ColourGradient bgGrad (juce::Colours::black, bounds.getX(), bounds.getBottom(),
+                                             juce::Colours::darkgrey.brighter (0.10f), bounds.getX(), bounds.getY(),
+                                             false);
+                g.setGradientFill (bgGrad);
+                g.fillRoundedRectangle (bounds, 4.0f);
+            }
 
             // LED ladder config (SSL-ish)
             constexpr int kDots   = 23;
@@ -108,24 +112,45 @@ private:
             // Anchor bottom dot to bottom edge - Phase 2: Snap Y positions
             const float yBottom = UIStyle::Snap::snapPx (bounds.getBottom() - dotD, physicalScale);
 
-            // "On" colors (lit)
-            const auto greenOn  = juce::Colour::fromRGB (60, 200, 110).withAlpha (0.90f);
-            const auto yellowOn = juce::Colour::fromRGB (230, 200, 70).withAlpha (0.90f);
-            const auto redOn    = juce::Colour::fromRGB (230, 70, 70).withAlpha (0.95f);
+            // Gradient palette (green -> yellow -> red)
+            const auto green  = juce::Colour::fromRGB (60, 200, 110);
+            const auto yellow = juce::Colour::fromRGB (230, 200, 70);
+            const auto red    = juce::Colour::fromRGB (230, 70, 70);
 
-            // "Off" colors (dim but still color-coded)
-            const auto greenOff  = juce::Colour::fromRGB (60, 200, 110).withAlpha (0.14f);
-            const auto yellowOff = juce::Colour::fromRGB (230, 200, 70).withAlpha (0.14f);
-            const auto redOff    = juce::Colour::fromRGB (230, 70, 70).withAlpha (0.16f);
+            auto colourForDot = [&] (int i, bool on)
+            {
+                // t=0 bottom, t=1 top
+                const float t = (kDots <= 1) ? 0.0f : (float) i / (float) (kDots - 1);
+
+                const float tGreenEnd  = (float) kGreen / (float) kDots;
+                const float tYellowEnd = (float) (kGreen + kYellow) / (float) kDots;
+
+                juce::Colour c;
+                if (t < tGreenEnd)
+                {
+                    const float u = tGreenEnd <= 0.0f ? 0.0f : (t / tGreenEnd);
+                    c = green.interpolatedWith (yellow, u);
+                }
+                else if (t < tYellowEnd)
+                {
+                    const float u = (tYellowEnd - tGreenEnd) <= 0.0f ? 0.0f : ((t - tGreenEnd) / (tYellowEnd - tGreenEnd));
+                    c = yellow.interpolatedWith (red, u * 0.25f); // keep yellow region mostly yellow
+                }
+                else
+                {
+                    const float u = (1.0f - tYellowEnd) <= 0.0f ? 0.0f : ((t - tYellowEnd) / (1.0f - tYellowEnd));
+                    c = yellow.interpolatedWith (red, u);
+                }
+
+                const float a = on ? 0.92f : 0.14f;
+                return c.withAlpha (a);
+            };
 
             for (int i = 0; i < kDots; ++i)
             {
                 const bool on = (i < litDots);
 
-                juce::Colour c;
-                if (i < kGreen)              c = on ? greenOn  : greenOff;
-                else if (i < kGreen+kYellow) c = on ? yellowOn : yellowOff;
-                else                         c = on ? redOn    : redOff;
+                const juce::Colour c = colourForDot (i, on);
 
                 // Phase 2: Snap dot Y position
                 const float y = UIStyle::Snap::snapPx (yBottom - (float) i * (dotD + gap), physicalScale);
@@ -134,8 +159,28 @@ private:
                 g.fillRoundedRectangle (juce::Rectangle<float> (x, y, dotD, dotD), dotD * 0.30f);
             }
 
-            // Border decision: OFF for now (dots only)
-            // If we want it later, we'll add it back after we judge the look.
+            // Subtle dB tick marks (within meter lane; no external labels due to narrow meter width)
+            {
+                g.setColour (juce::Colours::silver.withAlpha (0.25f));
+                const float x1 = bounds.getX() + 2.0f;
+                const float x2 = bounds.getRight() - 2.0f;
+
+                // Approximate SSL tick positions by normalizing dB into the 0..1 meter range.
+                // Use gain mapping and clamp: -18dB..0dB => 0..1
+                auto tickYForDb = [&] (float db)
+                {
+                    const float g01 = juce::Decibels::decibelsToGain (db);
+                    const float gMax = juce::Decibels::decibelsToGain (0.0f);
+                    const float t = juce::jlimit (0.0f, 1.0f, g01 / gMax);
+                    return UIStyle::Snap::snapPx (bounds.getBottom() - t * bounds.getHeight(), physicalScale);
+                };
+
+                for (float db : { -18.0f, -12.0f, -6.0f, -3.0f, 0.0f })
+                {
+                    const float yTick = tickYForDb (db);
+                    g.drawLine (x1, yTick, x2, yTick, 1.0f);
+                }
+            }
         }
 
     private:
@@ -246,15 +291,27 @@ private:
             const float scaleKey = editor.getScaleKeyActive();
             const float physicalScale = juce::jmax (1.0f, (float) g.getInternalContext().getPhysicalPixelScaleFactor());
             
-            // Phase 6: Use StringRef to avoid allocations, snap baseline Y
-            g.setColour (UIStyle::Colors::foreground.withAlpha (UIStyle::TextAlpha::header));
+            // Engraved popup readout (stronger, matches headers)
+            auto bounds = getLocalBounds().toFloat();
+            const float px = 1.0f / physicalScale;
             const auto& font = UIStyle::FontLadder::headerFont (scaleKey);
-            g.setFont (font);
-            
-            auto bounds = getLocalBounds();
-            const float snappedY = UIStyle::Snap::snapPx ((float) bounds.getY(), physicalScale);
-            bounds.setY ((int) snappedY);
+            g.setFont (juce::Font (font).withHeight (font.getHeight() * 1.1f));
+
+            // Snap baseline Y
+            const float snappedY = UIStyle::Snap::snapPx (bounds.getY(), physicalScale);
+            bounds.setY (snappedY);
+
+            // 1) Shadow
+            g.setColour (juce::Colours::black.withAlpha (0.80f));
+            g.drawText (juce::StringRef (textBuffer), bounds.translated (1.2f * px, 1.2f * px), juce::Justification::centred, false);
+
+            // 2) Main
+            g.setColour (juce::Colours::white);
             g.drawText (juce::StringRef (textBuffer), bounds, juce::Justification::centred, false);
+
+            // 3) Top highlight
+            g.setColour (juce::Colours::white.withAlpha (0.40f));
+            g.drawText (juce::StringRef (textBuffer), bounds.translated (0.0f, -1.0f * px), juce::Justification::centred, false);
         }
         
     private:
@@ -285,9 +342,9 @@ private:
     
     // Phase 6: Fixed readout bounds (set in resized(), never changes)
     static constexpr int kReadoutX = 300;
-    static constexpr int kReadoutY = 30;
+    static constexpr int kReadoutY = 20;
     static constexpr int kReadoutW = 160;
-    static constexpr int kReadoutH = 18;
+    static constexpr int kReadoutH = 20;
 
     class AltClickToggle final : public juce::ToggleButton
     {
@@ -312,53 +369,39 @@ private:
                 return;
 
             const bool isOn = getToggleState();
-            (void) shouldDrawButtonAsDown; // no hover/pressed styling (LOCKED)
+            (void) shouldDrawButtonAsDown; // no hover/pressed styling
 
-            // SSL BYPASS button — drop-in spec (LOCKED)
-            //
-            // Geometry:
-            //   r = getLocalBounds().toFloat().reduced(0.5f);
-            //   Outer border stroke: 1.0f
-            //   Inner edge stroke: 1.0f on r.reduced(1.0f)
-            const auto r = b.toFloat().reduced (0.5f);
+            // SSL BYPASS (red-on) — visual-only override (layout unchanged)
+            const auto rOuter = b.toFloat().reduced (3.0f);
+            if (rOuter.isEmpty())
+                return;
 
-            // Colors (LOCKED CONSTANTS)
-            const auto border = juce::Colour::fromRGB (120, 120, 120);
-            const auto innerEdge = juce::Colours::black.withAlpha (0.18f);
+            // Outer bevel frame
+            g.setColour (juce::Colours::silver.withAlpha (0.5f));
+            g.drawRoundedRectangle (rOuter, 8.0f, 2.0f);
 
-            const auto offFill = juce::Colour::fromRGB (210, 210, 210);
-            const auto offText = juce::Colour::fromRGB (12, 12, 12);
+            // Fill: grey when off, dark red when on
+            const auto fill = isOn ? juce::Colour (0xFF8B0000).brighter (0.2f)
+                                   : juce::Colours::darkgrey.brighter (0.15f);
+            const auto rFill = rOuter.reduced (2.0f);
+            g.setColour (fill);
+            g.fillRoundedRectangle (rFill, 6.0f);
 
-            const auto onFill = juce::Colour::fromRGB (210, 210, 210);
-            const auto glowC = juce::Colour::fromRGB (160, 235, 195);
-            const auto onText = juce::Colour::fromRGB (12, 12, 12);
+            // Engraved text (3-pass)
+            const auto textArea = rFill.reduced (2.0f);
+            const auto txt = getButtonText();
+            const auto just = juce::Justification::centred;
 
-            // 1) Fill base (OFF/ON both use off-white base)
-            g.setColour (isOn ? onFill : offFill);
-            g.fillRect (r);
+            g.setFont (juce::Font (12.0f, juce::Font::bold));
 
-            // 2) If ON: draw glow1, then glow2 (inset overlays; flat rectangles; no gradients)
-            if (isOn)
-            {
-                g.setColour (glowC.withAlpha (0.22f));
-                g.fillRect (r.reduced (2.0f));
+            g.setColour (juce::Colours::black.withAlpha (0.70f));
+            g.drawText (txt, textArea.translated (1.2f, 1.2f), just, false);
 
-                g.setColour (glowC.withAlpha (0.14f));
-                g.fillRect (r.reduced (5.0f));
-            }
+            g.setColour (juce::Colours::whitesmoke.withAlpha (0.95f));
+            g.drawText (txt, textArea, just, false);
 
-            // 3) Draw 1px outer border
-            g.setColour (border);
-            g.drawRect (r, 1.0f);
-
-            // 4) Draw 1px inner darkening stroke
-            g.setColour (innerEdge);
-            g.drawRect (r.reduced (1.0f), 1.0f);
-
-            // 5) Draw centered text (same sizing as current; do not enlarge)
-            g.setColour (isOn ? onText : offText);
-            g.setFont (12.0f);
-            g.drawFittedText (getButtonText(), b.reduced (6, 0), juce::Justification::centred, 1);
+            g.setColour (juce::Colours::white.withAlpha (0.20f));
+            g.drawText (txt, textArea.translated (0.0f, -0.6f), just, false);
         }
     };
 

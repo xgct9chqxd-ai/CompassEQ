@@ -3,7 +3,7 @@
 #include "UIStyle.h"
 
 static constexpr int kEditorW = 760;
-static constexpr int kEditorH = 420;
+static constexpr int kEditorH = 460;
 
 // ===== Phase 5.0 helper (cpp-only) =====
 // ===== Phase 6.0 audit overlay (OFF by default) =====
@@ -181,9 +181,11 @@ namespace
     //   opacity = 0.14
     static inline juce::Colour stage5_bandHueToSectionBg_OkLabLinear (float hueDeg, juce::Colour knobBodySrgbNeutral)
     {
-        constexpr float satRatio = 0.55f;
-        constexpr float maxChromaC = 0.30f;
-        constexpr float luminanceDeltaLstar = -10.0f;
+        // PHASE 1 — COLOR & SATURATION REBALANCE (band background fills only)
+        // Goal: unmistakable band identity (peripheral vision / squint), without touching layout/knobs/dividers.
+        constexpr float satRatio = 0.85f;      // stronger chroma (primary lever)
+        constexpr float maxChromaC = 0.38f;    // allow more chroma before clamp
+        constexpr float luminanceDeltaLstar = -10.0f; // keep overall lane value in the existing dark range
 
         // Luminance source remains the knob body constant (neutral), per locked rules.
         const float kR = srgbToLinear1 (knobBodySrgbNeutral.getFloatRed());
@@ -192,7 +194,15 @@ namespace
         OKLab knobLab = linearSrgbToOklab (kR, kG, kB);
 
         const float L100 = knobLab.L * 100.0f;
-        const float newL100 = juce::jlimit (0.0f, 100.0f, L100 + luminanceDeltaLstar);
+        // Slight luminance separation between bands (subtle; saturation does the heavy lifting).
+        // These are ΔL* in OKLab-L* (0..100) space, applied only to band lanes.
+        float bandDeltaLstar = 0.0f;
+        if (hueDeg == UIStyle::Colors::bandHueLF)      bandDeltaLstar = -2.0f; // LF anchor: heavier / quieter
+        else if (hueDeg == UIStyle::Colors::bandHueLMF) bandDeltaLstar = +0.5f;
+        else if (hueDeg == UIStyle::Colors::bandHueHMF) bandDeltaLstar =  0.0f;
+        else if (hueDeg == UIStyle::Colors::bandHueHF)  bandDeltaLstar = +1.0f;
+
+        const float newL100 = juce::jlimit (0.0f, 100.0f, L100 + luminanceDeltaLstar + bandDeltaLstar);
 
         // Hue is locked from band constants (OKLCH hue degrees). "Saturation" is OKLCH chroma C.
         // Since hue constants are angle-only, define source chroma as unit (1.0) in OKLab space for the satRatio rule.
@@ -261,6 +271,10 @@ namespace
         juce::Rectangle<int> colLMF,
         juce::Rectangle<int> colHMF,
         juce::Rectangle<int> colHF,
+        juce::Rectangle<int> lfFreqKnob,
+        juce::Rectangle<int> lmfFreqKnob,
+        juce::Rectangle<int> hmfFreqKnob,
+        juce::Rectangle<int> hfFreqKnob,
         juce::Rectangle<int> hpfKnob,
         juce::Rectangle<int> lpfKnob,
         juce::Rectangle<int> meterInRect,
@@ -270,12 +284,20 @@ namespace
         if (editor.isEmpty())
             return;
 
-        // STAGE 5.5 — NEUTRAL BLACK BASE PLATE (LOCKED)
-        // Any region outside the colored band lanes must render as neutral black.
-        // One base plate black constant only.
-        const auto plateBaseBlack = juce::Colour::fromRGB (18, 18, 18);
-        g.setColour (plateBaseBlack);
-        g.fillRect (editor);
+        // ===== Waves SSL-inspired console panel (base) =====
+        // Brushed metal background gradient (dark grey -> warm medium grey) + faint horizontal brush lines.
+        {
+            const auto b = editor.toFloat();
+            juce::ColourGradient metalGrad (juce::Colour (0xFF2a2a2a), b.getX(), b.getY(),
+                                            juce::Colour (0xFF4a4a4a), b.getX(), b.getBottom(),
+                                            false);
+            g.setGradientFill (metalGrad);
+            g.fillRect (b);
+
+            g.setColour (juce::Colours::white.withAlpha (0.03f));
+            for (int y = editor.getY(); y < editor.getBottom(); y += 3)
+                g.drawLine ((float) editor.getX(), (float) y, (float) editor.getRight(), (float) y, 0.5f);
+        }
 
         // STAGE 5 — ROLL-OUT TO ALL EQ BANDS (LF / LMF / HMF / HF)
         // LOCKED CONSTANTS (DO NOT CHANGE):
@@ -310,41 +332,58 @@ namespace
                 const float xDiv2 = x0 + 2.0f * laneW + 1.0f * dividerW;
                 const float xDiv3 = x0 + 3.0f * laneW + 2.0f * dividerW;
 
-                // Lane fills (flat, same opacity, per-band hue constants)
-                constexpr float laneOpacity = 0.14f;
-                auto fillLane = [&] (float xLeft, float w, float hueDeg)
+                // Shrink the TOP of the colored lanes so it starts at the top of the FREQ (KHz) knob.
+                // Do not change knob positions; do not change the lane bottom.
+                constexpr float kLaneTopExtra = 18.0f;
+                const int yTopKHz = juce::jmin (lfFreqKnob.getY(), lmfFreqKnob.getY(),
+                                               hmfFreqKnob.getY(), hfFreqKnob.getY());
+                const float y1 = (float) yTopKHz - kLaneTopExtra; // raise lane top slightly above the KHz knob
+                const float y2 = (float) bandsRect.getBottom() + 6.0f;
+
+                // Soft band panels (colored metal tints; no hard blocks)
+                auto drawBandPanel = [&] (juce::Rectangle<float> lane, juce::Colour cTop, juce::Colour cBot)
                 {
-                    const auto rf = juce::Rectangle<float> (xLeft, (float) bandsRect.getY(), w, (float) bandsRect.getHeight());
-                    if (rf.isEmpty())
+                    auto panel = lane.reduced (6.0f, 8.0f);
+                    if (panel.isEmpty())
                         return;
-                    const auto c = stage5_bandHueToSectionBg_OkLabLinear (hueDeg, UIStyle::Colors::knobBody).withAlpha (laneOpacity);
-                    g.setColour (c);
-                    g.fillRect (rf);
+
+                    juce::ColourGradient grad (cTop, panel.getCentreX(), panel.getY(),
+                                               cBot, panel.getCentreX(), panel.getBottom(),
+                                               false);
+                    g.setGradientFill (grad);
+                    g.fillRoundedRectangle (panel, 12.0f);
+
+                    // Thin engraved borders (silver outer + inner shadow)
+                    g.setColour (juce::Colours::silver.withAlpha (0.30f));
+                    g.drawRoundedRectangle (panel, 12.0f, 1.5f);
+                    g.setColour (juce::Colours::black.withAlpha (0.50f));
+                    g.drawRoundedRectangle (panel.reduced (0.5f), 12.0f, 0.8f);
                 };
 
-                // Construct lanes from span (do not reuse old midpoints)
-                fillLane (x0,                         laneW, UIStyle::Colors::bandHueLF);
-                fillLane (x0 + laneW + dividerW,      laneW, UIStyle::Colors::bandHueLMF);
-                fillLane (x0 + 2.0f * laneW + 2*dividerW, laneW, UIStyle::Colors::bandHueHMF);
-                fillLane (x0 + 3.0f * laneW + 3*dividerW, laneW, UIStyle::Colors::bandHueHF);
+                const auto laneLF  = juce::Rectangle<float> (x0,                             y1, laneW, y2 - y1);
+                const auto laneLMF = juce::Rectangle<float> (x0 + laneW + dividerW,          y1, laneW, y2 - y1);
+                const auto laneHMF = juce::Rectangle<float> (x0 + 2.0f * laneW + 2*dividerW, y1, laneW, y2 - y1);
+                const auto laneHF  = juce::Rectangle<float> (x0 + 3.0f * laneW + 3*dividerW, y1, laneW, y2 - y1);
 
-                // Dividers between adjacent bands only (LF|LMF|HMF|HF)
-                const auto dividerCol = juce::Colour::fromRGB (230, 230, 230).withAlpha (0.65f);
-                g.setColour (dividerCol);
-                const float y1 = (float) bandsRect.getY();
-                const float y2 = (float) bandsRect.getBottom();
-                g.drawLine (xDiv1, y1, xDiv1, y2, 1.0f);
-                g.drawLine (xDiv2, y1, xDiv2, y2, 1.0f);
-                g.drawLine (xDiv3, y1, xDiv3, y2, 1.0f);
+                // Soft tinted gradients per band (subtle "colored metal")
+                drawBandPanel (laneLF,
+                               juce::Colours::blue.withAlpha (0.18f),
+                               juce::Colours::darkblue.withAlpha (0.09f));
+                drawBandPanel (laneLMF,
+                               juce::Colours::purple.withAlpha (0.15f),
+                               juce::Colours::darkslateblue.withAlpha (0.08f));
+                drawBandPanel (laneHMF,
+                               juce::Colours::forestgreen.withAlpha (0.12f),
+                               juce::Colours::darkgreen.withAlpha (0.06f));
+                drawBandPanel (laneHF,
+                               juce::Colours::darkred.withAlpha (0.21f),
+                               juce::Colours::maroon.withAlpha (0.11f));
 
-                // Outer divider frame around the entire colored EQ band lane block (LF/LMF/HMF/HF)
-                // Style is locked to match internal dividers (same 1px, same colour/alpha).
-                const float xLeft  = x0;
-                const float xRight = x0 + 4.0f * laneW + 3.0f * dividerW; // HF lane right edge
-                g.drawLine (xLeft,  y1, xRight, y1, 1.0f); // top
-                g.drawLine (xLeft,  y2, xRight, y2, 1.0f); // bottom
-                g.drawLine (xLeft,  y1, xLeft,  y2, 1.0f); // left
-                g.drawLine (xRight, y1, xRight, y2, 1.0f); // right
+                // Etched dividers between bands (SSL strip separation)
+                g.setColour (juce::Colours::lightgrey.withAlpha (0.20f));
+                g.drawLine (xDiv1, y1, xDiv1, y2, 1.2f);
+                g.drawLine (xDiv2, y1, xDiv2, y2, 1.2f);
+                g.drawLine (xDiv3, y1, xDiv3, y2, 1.2f);
             }
         }
 
@@ -378,8 +417,8 @@ namespace
 
             if (! filterBar.isEmpty())
             {
-                g.setColour (topZoneColor);
-                g.fillRect (filterBar);
+                // Console metal base already covers this region; no separate black bar in this aesthetic.
+                juce::ignoreUnused (topZoneColor, filterBar);
             }
         }
     }
@@ -420,177 +459,158 @@ namespace
         strokeArcDeg ( -5.0f,  85.0f, juce::Colours::black, juce::jmin (UIStyle::occlusionAlphaMax, 0.18f));
     }
 
-    // ===== PHASE 7: SSL KNOB LOCK (deterministic geometry; no gradients/images) =====
-    // Helper signature is fixed, but indicator angle must use JUCE's rotaryStart/End angles.
-    // We set these immediately before calling drawSSLKnob() from drawRotarySlider().
+    // ===== Waves SSL-style knobs (vector; no assets) =====
+    // Cached base knob rendering (no pointer), drawn + pointer line on top per-frame.
+    // This intentionally uses gradients to achieve the classic SSL bevel/metallic depth.
+    //
+    // Note: This supersedes the prior deterministic-flat knob system for this change set.
     static float gRotaryStartAngleRad = 0.0f;
     static float gRotaryEndAngleRad   = juce::MathConstants<float>::twoPi;
 
-    static inline int unitPxFromScaleKey (float scaleKey)
+    struct WavesSSLKnobCache
     {
-        // unitPx = clamp(round(scaleKey), 1, 2)
-        return juce::jlimit (1, 2, juce::roundToInt (scaleKey));
-    }
+        static juce::Image render (int sizePx, juce::Colour bandColour)
+        {
+            juce::Image img (juce::Image::ARGB, sizePx, sizePx, true);
+            juce::Graphics gg (img);
 
-    // PHASE 7 — SSL KNOB RENDERER (LOCKED)
-    // Visual gate passed: manufactured hardware at idle
-    // Do not modify without reopening Phase 7
-    static void drawSSLKnob (juce::Graphics& g, juce::Rectangle<float> b, float value01, float scaleKey)
+            const auto s = (float) sizePx;
+            auto bounds = juce::Rectangle<float> (0.0f, 0.0f, s, s).reduced (1.0f);
+            const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
+            const float cx = bounds.getCentreX();
+            const float cy = bounds.getCentreY();
+
+            // 0) Drop shadow (keep for depth)
+            {
+                juce::Path p;
+                p.addEllipse (bounds.reduced (2.0f));
+                const juce::DropShadow shadow (juce::Colours::black.withAlpha (0.40f), 6, { 0, 3 });
+                shadow.drawForPath (gg, p);
+            }
+
+            // 1) Outer chrome rim (keep neutral)
+            {
+                juce::ColourGradient rimGrad (juce::Colours::whitesmoke, cx, cy - radius * 0.80f,
+                                              juce::Colours::darkgrey.darker (0.60f), cx, cy + radius * 0.80f,
+                                              false);
+                gg.setGradientFill (rimGrad);
+                gg.fillEllipse (bounds);
+            }
+
+            // 2) Colored knob body — bolder cap (reference match)
+            auto knobBounds = bounds.reduced (juce::jmax (6.0f, radius * 0.18f));
+            {
+                // Base solid (boosted)
+                const auto base = bandColour.withMultipliedSaturation (1.8f).brighter (0.20f);
+                gg.setColour (base);
+                gg.fillEllipse (knobBounds);
+
+                // Depth: darker bottom, lighter top
+                juce::ColourGradient bodyGrad (base.darker (0.20f),   cx, cy + radius * 0.30f,
+                                               base.brighter (0.30f), cx, cy - radius * 0.50f,
+                                               false);
+                gg.setGradientFill (bodyGrad);
+                gg.fillEllipse (knobBounds);
+            }
+
+            // 3) Gloss stronger for plastic shine
+            {
+                juce::Path highlight;
+                highlight.addEllipse (knobBounds.reduced (5.0f));
+                gg.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.45f), cx, cy - radius * 0.70f,
+                                                          juce::Colours::transparentWhite,       cx, cy + radius * 0.10f,
+                                                          false));
+                gg.fillPath (highlight);
+            }
+
+            // 4) Inner rim shadow (keep subtle)
+            {
+                gg.setColour (juce::Colours::black.withAlpha (0.35f));
+                gg.drawEllipse (knobBounds, juce::jmax (1.0f, radius * 0.06f));
+            }
+
+            return img;
+        }
+
+        static const juce::Image& get (int sizePx, juce::Colour bandColour)
+        {
+            static std::map<std::pair<int, uint32_t>, juce::Image> cache;
+            const auto key = std::make_pair (sizePx, (uint32_t) bandColour.getARGB());
+            auto it = cache.find (key);
+            if (it != cache.end())
+                return it->second;
+            cache[key] = render (sizePx, bandColour);
+            return cache[key];
+        }
+    };
+
+    static void drawSSLKnob (juce::Graphics& g, juce::Rectangle<float> b, float value01, float scaleKey, juce::Colour bandColour)
     {
         if (b.isEmpty())
             return;
 
-        // 0) Precompute geometry (no drawing)
         const float physicalScale = juce::jmax (1.0f, (float) g.getInternalContext().getPhysicalPixelScaleFactor());
-
         const float size = juce::jmin (b.getWidth(), b.getHeight());
-        const float R = 0.5f * size;
+        const int sizePx = juce::jlimit (24, 512, juce::roundToInt (size * physicalScale));
 
-        const auto cRaw = b.getCentre();
-        const float cx = UIStyle::Snap::snapPx (cRaw.x, physicalScale);
-        const float cy = UIStyle::Snap::snapPx (cRaw.y, physicalScale);
+        const auto& base = WavesSSLKnobCache::get (sizePx, bandColour);
+        auto dst = juce::Rectangle<float> (b.getCentreX() - size * 0.5f,
+                                           b.getCentreY() - size * 0.5f,
+                                           size, size);
 
-        // Geometry ratios (locked)
-        const float rOuter      = 1.00f * R;
-        const float rSkirtInner = 0.86f * R;
-        const float rTopOuter   = 0.86f * R;
-        const float rTopInner   = 0.62f * R;
-        const float rCap        = 0.26f * R; // locked
+        g.drawImage (base, dst, juce::RectanglePlacement::stretchToFit);
 
-        // Strokes (scale-aware, clamped)
-        const float px1 = (float) unitPxFromScaleKey (scaleKey);
-        // Strengthen tooling break: +1px (scale-aware, crisp)
-        const float breakStroke = juce::jlimit (2.0f, 3.0f, px1 + 1.0f);
+        // Pointer / indicator line (classic SSL: white line pointer)
+        const float v = juce::jlimit (0.0f, 1.0f, value01);
+        const float angleRad = gRotaryStartAngleRad + v * (gRotaryEndAngleRad - gRotaryStartAngleRad);
 
-        auto circleBounds = [] (float ccx, float ccy, float rr)
-        {
-            return juce::Rectangle<float> (ccx - rr, ccy - rr, rr * 2.0f, rr * 2.0f);
-        };
+        const auto c = dst.getCentre();
+        const float radius = dst.getWidth() * 0.5f;
+        const float len = radius * 0.75f;
+        const auto p1 = juce::Point<float> (c.x + std::cos (angleRad) * len,
+                                            c.y + std::sin (angleRad) * len);
 
-        auto snapEllipse = [&] (juce::Rectangle<float> rf)
-        {
-            const float x1 = UIStyle::Snap::snapPx (rf.getX(), physicalScale);
-            const float y1 = UIStyle::Snap::snapPx (rf.getY(), physicalScale);
-            const float x2 = UIStyle::Snap::snapPx (rf.getRight(), physicalScale);
-            const float y2 = UIStyle::Snap::snapPx (rf.getBottom(), physicalScale);
-            return juce::Rectangle<float> (x1, y1, x2 - x1, y2 - y1);
-        };
+        const float w = juce::jmax (4.0f, 4.0f * scaleKey);
+        g.setColour (juce::Colours::white.withAlpha (0.92f));
+        g.drawLine (c.x, c.y, p1.x, p1.y, w);
 
-        // Tones (grayscale only)
-        // - Skirt clearly darker than top (dominant mass)
-        // - Break ring darker than skirt (crisp separation)
-        const juce::Colour skirtCol     = juce::Colour::fromRGB (34, 34, 34);       // darker skirt (more dominance)
-        const juce::Colour breakCol     = juce::Colour::fromRGB (18, 18, 18);       // darker than skirt
-        const juce::Colour topCol       = juce::Colour::fromRGB (72, 72, 72);       // lighter top (bigger step vs skirt)
-        const juce::Colour innerRingCol = juce::Colour::fromRGB (34, 34, 34);       // darker than top
-        const juce::Colour capCol       = juce::Colour::fromRGB (46, 46, 46);       // slightly darker than top
-
-        // Snapped bounds
-        const auto outerB = snapEllipse (circleBounds (cx, cy, rOuter));
-        const auto topB   = snapEllipse (circleBounds (cx, cy, rTopOuter));
-        const auto innerB = snapEllipse (circleBounds (cx, cy, rTopInner));
-        const auto capB   = snapEllipse (circleBounds (cx, cy, rCap));
-
-        // 1) Skirt fill (dark)
-        g.setColour (skirtCol);
-        g.fillEllipse (outerB);
-
-        // 2) Break ring stroke at 0.86R (crisp)
-        {
-            const auto breakB = snapEllipse (circleBounds (cx, cy, rSkirtInner));
-            g.setColour (breakCol);
-            g.drawEllipse (breakB, breakStroke);
-        }
-
-        // 3) Top disc fill (slightly lighter)
-        g.setColour (topCol);
-        g.fillEllipse (topB);
-
-        // 4) Inner ring stroke at 0.62R
-        g.setColour (innerRingCol);
-        g.drawEllipse (innerB, px1);
-
-        // 5) Directional edge grammar ONLY via edge strips (global top-left)
-        {
-            juce::Graphics::ScopedSaveState ss (g);
-            juce::Path clip;
-            clip.addEllipse (outerB);
-            g.reduceClipRegion (clip);
-
-            const float arcR = rOuter - (px1 * 0.75f);
-
-            auto strokeArcDeg = [&] (float degStart, float degEnd, juce::Colour col, float alpha)
-            {
-                const float a0 = juce::degreesToRadians (degStart);
-                const float a1 = juce::degreesToRadians (degEnd);
-                juce::Path p;
-                p.addCentredArc (cx, cy, arcR, arcR, 0.0f, a0, a1, true);
-                g.setColour (col.withAlpha (alpha));
-                g.strokePath (p, juce::PathStrokeType (px1, juce::PathStrokeType::curved, juce::PathStrokeType::butt));
-            };
-
-            // Exactly one highlight arc (top-left) and one occlusion arc (bottom-right)
-            // Break lighting symmetry: tighter spans, more directional bias (alpha caps unchanged).
-            const float hiA  = juce::jmin (UIStyle::highlightAlphaMax, 0.10f); // slightly reduced skirt lighting
-            const float occA = juce::jmin (UIStyle::occlusionAlphaMax, 0.16f);
-
-            strokeArcDeg (175.0f, 265.0f, UIStyle::Colors::foreground, hiA); // top-left (tighter)
-            strokeArcDeg ( -5.0f,  85.0f, juce::Colours::black,        occA); // bottom-right (tighter)
-        }
-
-        // 6) Center cap fill + 1px cap stroke
-        g.setColour (capCol);
-        g.fillEllipse (capB);
-        g.setColour (juce::Colours::black.withAlpha (0.14f));
-        g.drawEllipse (capB, px1);
-
-        // 7) Tooling inflection ring: subtle ring 5–8px inside top edge (low contrast)
-        {
-            const float insetNom = 6.0f * scaleKey;
-            float inset = juce::jlimit (5.0f * scaleKey, 8.0f * scaleKey, insetNom);
-            inset = juce::jmin (inset, rTopOuter - (px1 * 2.0f)); // bounds safety for small knobs
-
-            const auto inflectB = snapEllipse (circleBounds (cx, cy, rTopOuter - inset));
-            g.setColour (juce::Colours::black.withAlpha (0.035f));
-            g.drawEllipse (inflectB, px1);
-        }
-
-        // 8) Indicator: UNDERSTROKE dark then MAIN stroke light, square/butt caps
-        {
-            const float v = juce::jlimit (0.0f, 1.0f, value01);
-            const float angleRad = gRotaryStartAngleRad + v * (gRotaryEndAngleRad - gRotaryStartAngleRad);
-
-            const float r0 = 0.28f * R;
-            const float r1 = 0.78f * R;
-            auto p0 = juce::Point<float> (cx, cy).getPointOnCircumference (r0, angleRad);
-            auto p1 = juce::Point<float> (cx, cy).getPointOnCircumference (r1, angleRad);
-            p0 = UIStyle::Snap::snapPoint (p0, physicalScale);
-            p1 = UIStyle::Snap::snapPoint (p1, physicalScale);
-
-            juce::Path indicator;
-            indicator.startNewSubPath (p0);
-            indicator.lineTo (p1);
-
-            // Thickness rule:
-            // - main stroke >= 2.0f * scaleKey
-            // - under-stroke thicker than main
-            const float mainW  = juce::jmax (2.0f * scaleKey, 2.0f);
-            const float underW = mainW + px1;
-
-            g.setColour (UIStyle::Colors::knobIndicatorUnderStroke.withAlpha (0.45f));
-            g.strokePath (indicator, juce::PathStrokeType (underW, juce::PathStrokeType::mitered, juce::PathStrokeType::butt));
-
-            g.setColour (UIStyle::Colors::knobIndicator.withAlpha (0.95f));
-            g.strokePath (indicator, juce::PathStrokeType (mainW, juce::PathStrokeType::mitered, juce::PathStrokeType::butt));
-        }
+        // Center hub (small chrome)
+        g.setColour (juce::Colours::silver);
+        g.fillEllipse (c.x - 4.0f, c.y - 4.0f, 8.0f, 8.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.30f));
+        g.fillEllipse (c.x - 2.0f, c.y - 2.0f, 4.0f, 4.0f);
     }
 }
 
 // ===== Value popup helper (cpp-only) =====
 static inline juce::String popupTextFor (juce::Slider& s)
 {
-    // Uses JUCE's value→text conversion (suffix/decimals) if you set it.
-    return s.getTextFromValue (s.getValue());
+    const auto name = s.getName();
+    const double value = s.getValue();
+
+    // Frequency knobs (all Freq sliders)
+    if (name.containsIgnoreCase ("frequency") || name.containsIgnoreCase ("freq"))
+    {
+        if (value >= 1000.0)
+            return juce::String (value / 1000.0, 2) + " kHz";
+
+        return juce::String (value, 2) + " Hz";
+    }
+
+    // Gain (GR)
+    if (name.containsIgnoreCase ("gain") || name.containsIgnoreCase ("gr"))
+        return juce::String (value, 1) + " dB";
+
+    // Q
+    if (name.containsIgnoreCase ("q"))
+        return juce::String (value, 1);
+
+    // Trim (fallback)
+    if (name.containsIgnoreCase ("trim"))
+        return juce::String (value, 1) + " dB";
+
+    // Default fallback
+    return s.getTextFromValue (value);
 }
 
 // ===== Custom LookAndFeel implementation =====
@@ -604,14 +624,45 @@ static inline juce::String popupTextFor (juce::Slider& s)
 void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider (
     juce::Graphics& g, int x, int y, int width, int height,
     float sliderPos, float rotaryStartAngle, float rotaryEndAngle,
-    juce::Slider&)
+    juce::Slider& s)
 {
     const float scaleKey = editor.getScaleKeyActive();
-    auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height);
-    bounds = bounds.reduced (juce::jmax (1.0f, 1.0f * scaleKey));
+    auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat().reduced (6.0f);
+    if (bounds.isEmpty())
+        return;
+
+    // Band colour mapping (corrected): LF blue, LMF purple, HMF green, HF red
+    auto capColourForHue = [] (float hueDeg) -> juce::Colour
+    {
+        if (hueDeg < 0.0f)
+            return juce::Colours::darkgrey.brighter (0.30f); // neutral for non-band
+
+        // OKLab hue source + boost for solid cap look
+        auto temp = stage5_bandHueToSectionBg_OkLabLinear (hueDeg, juce::Colours::darkgrey);
+        return temp.withMultipliedSaturation (1.8f).brighter (0.20f);
+    };
+
+    juce::Colour bandColour = juce::Colours::darkgrey.brighter (0.30f);
+    const auto nm = s.getName();
+    if (nm.startsWith ("LF"))
+        bandColour = capColourForHue (UIStyle::Colors::bandHueLF);
+    else if (nm.startsWith ("LMF"))
+        bandColour = capColourForHue (UIStyle::Colors::bandHueLMF);
+    else if (nm.startsWith ("HMF"))
+        bandColour = capColourForHue (UIStyle::Colors::bandHueHMF);
+    else if (nm.startsWith ("HF"))
+        bandColour = capColourForHue (UIStyle::Colors::bandHueHF);
+
+    // Hover ring (kept)
+    if (s.isMouseOverOrDragging())
+    {
+        g.setColour (juce::Colours::white.withAlpha (0.12f));
+        g.drawEllipse (bounds.expanded (6.0f), 2.0f);
+    }
+
     gRotaryStartAngleRad = rotaryStartAngle;
     gRotaryEndAngleRad = rotaryEndAngle;
-    drawSSLKnob (g, bounds, sliderPos, scaleKey);
+    drawSSLKnob (g, bounds, sliderPos, scaleKey, bandColour);
 }
 
 CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor (CompassEQAudioProcessor& p)
@@ -667,7 +718,7 @@ CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor (CompassEQAudioProc
         }
     };
 
-    // Wire readout behavior for each slider
+    // Wire drag-only popup readout behavior for each slider
     auto wireReadout = [this, updateReadout] (CompassSlider& s)
     {
         s.onDragStart = [this, updateReadout, &s]
@@ -689,8 +740,8 @@ CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor (CompassEQAudioProc
         s.onDragEnd = [this]
         {
             valueReadout.hide();
-            activeSlider = nullptr;
-        };
+        activeSlider = nullptr;
+    };
     };
 
     // Apply to all sliders
@@ -805,6 +856,10 @@ CompassEQAudioProcessorEditor::~CompassEQAudioProcessorEditor()
 void CompassEQAudioProcessorEditor::configureKnob (CompassSlider& s, const char* paramId, float defaultValue)
 {
     s.setSliderStyle (juce::Slider::RotaryVerticalDrag);
+    // Correct standard pro EQ arc: min ~8 o'clock, neutral 12 o'clock straight up, max ~4 o'clock
+    s.setRotaryParameters (juce::MathConstants<float>::pi * 1.5f - juce::MathConstants<float>::pi * 0.833f,   // start ~225° (8 o'clock min)
+                           juce::MathConstants<float>::pi * 1.5f + juce::MathConstants<float>::pi * 0.833f,   // end ~315° (4 o'clock max)
+                           true);
     s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     s.setPopupDisplayEnabled (false, false, this);
     
@@ -856,6 +911,10 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
         assetSlots.colLMF,
         assetSlots.colHMF,
         assetSlots.colHF,
+        lfFreq.getBounds(),
+        lmfFreq.getBounds(),
+        hmfFreq.getBounds(),
+        hfFreq.getBounds(),
         hpfFreq.getBounds(),
         lpfFreq.getBounds(),
         inputMeter.getBounds(),
@@ -888,22 +947,50 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
     const auto& microFont  = UIStyle::FontLadder::microFont (scaleKey);
     const float hairlineStroke = UIStyle::StrokeLadder::hairlineStroke (scaleKey);
 
-    auto drawHeaderAbove = [&g, &headerFont, kHeaderA, physicalScale] (const char* txt, juce::Rectangle<int> b, int yOffset)
+    // Engraved text helper (3-pass) — geometry locked (no layout drift)
+    const float px = 1.0f / juce::jmax (1.0f, physicalScale); // 1 physical px in logical coords
+    auto drawEngravedFitted = [&g, px] (const char* txt,
+                                        int x, int y, int w, int h,
+                                        juce::Justification just,
+                                        int maxLines,
+                                        float baseAlpha,
+                                        juce::Colour mainCol)
     {
-        g.setColour (UIStyle::Colors::foreground.withAlpha (kHeaderA));
+        // 1) Shadow (engraved depth)
+        g.setColour (juce::Colours::black.withAlpha (juce::jlimit (0.0f, 1.0f, 0.65f * baseAlpha)));
+        g.drawFittedText (txt,
+                          juce::roundToInt ((float) x + 1.2f * px),
+                          juce::roundToInt ((float) y + 1.2f * px),
+                          w, h, just, maxLines);
+
+        // 2) Main fill (slightly brighter)
+        g.setColour (mainCol.withAlpha (juce::jlimit (0.0f, 1.0f, 1.00f * baseAlpha)));
+        g.drawFittedText (txt, x, y, w, h, just, maxLines);
+
+        // 3) Top highlight (machined shine)
+        g.setColour (juce::Colours::white.withAlpha (juce::jlimit (0.0f, 1.0f, 0.30f * baseAlpha)));
+        g.drawFittedText (txt,
+                          x,
+                          juce::roundToInt ((float) y - 0.8f * px),
+                          w, h, just, maxLines);
+    };
+
+    auto drawHeaderAbove = [&g, &headerFont, kHeaderA, physicalScale, drawEngravedFitted] (const char* txt, juce::Rectangle<int> b, int yOffset)
+    {
         g.setFont (headerFont);
         // Phase 2: Snap baseline Y
         const float snappedY = UIStyle::Snap::snapPx ((float) (b.getY() + yOffset), physicalScale);
-        g.drawFittedText (txt, b.getX(), (int) snappedY, b.getWidth(), 12, juce::Justification::centred, 1);
+        drawEngravedFitted (txt, b.getX(), (int) snappedY, b.getWidth(), 12,
+                            juce::Justification::centred, 1, kHeaderA, juce::Colours::white);
     };
 
-    auto drawLegendBelow = [&g, &microFont, kMicroA, physicalScale] (const char* txt, juce::Rectangle<int> b, int yOffset)
+    auto drawLegendBelow = [&g, &microFont, kHeaderA, physicalScale, drawEngravedFitted] (const char* txt, juce::Rectangle<int> b, int yOffset)
     {
-        g.setColour (UIStyle::Colors::foreground.withAlpha (kMicroA));
         g.setFont (microFont);
         // Phase 2: Snap baseline Y
         const float snappedY = UIStyle::Snap::snapPx ((float) (b.getBottom() + yOffset), physicalScale);
-        g.drawFittedText (txt, b.getX(), (int) snappedY, b.getWidth(), 12, juce::Justification::centred, 1);
+        drawEngravedFitted (txt, b.getX(), (int) snappedY, b.getWidth(), 12,
+                            juce::Justification::centred, 1, kHeaderA, juce::Colours::white);
     };
 
     auto drawTick = [&g, kTickA, physicalScale, hairlineStroke] (juce::Rectangle<int> b, int yOffset)
@@ -915,38 +1002,37 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
         g.drawLine (cx, y0, cx, y1, hairlineStroke);
     };
 
-    auto drawColLabel = [&g, &headerFont, kHeaderA, physicalScale] (const char* txt, juce::Rectangle<int> columnBounds, int y)
+    auto drawColLabel = [&g, &headerFont, kHeaderA, physicalScale, drawEngravedFitted] (const char* txt, juce::Rectangle<int> columnBounds, int y)
     {
-        g.setColour (UIStyle::Colors::foreground.withAlpha (kHeaderA));
         g.setFont (headerFont);
         // Phase 2: Snap baseline Y
         const float snappedY = UIStyle::Snap::snapPx ((float) y, physicalScale);
-        g.drawFittedText (txt, columnBounds.getX(), (int) snappedY, columnBounds.getWidth(), 14, juce::Justification::centred, 1);
+        drawEngravedFitted (txt, columnBounds.getX(), (int) snappedY, columnBounds.getWidth(), 14,
+                            juce::Justification::centred, 1, kHeaderA, juce::Colours::white);
     };
 
-    // Title (centered inside header plate) - Phase 2: Snap baseline Y
-    g.setColour (UIStyle::Colors::foreground.withAlpha (kTitleA));
-    g.setFont (titleFont);
-    // Title stays at existing bounds (no panel dependency)
+    // Title (top-left; smaller; engraved) — geometry is fixed relative to editor
     {
-        // Reuse headerZone bounds without drawing a header plate
-        const int inset = 16;
-        auto headerFW = fullWidthFrom (assetSlots.editor, assetSlots.headerZone, inset);
-        if (! headerFW.isEmpty())
-        {
-            auto titleRect = headerFW.withTrimmedTop (6).withHeight (24);
-            const float snappedY = UIStyle::Snap::snapPx ((float) titleRect.getY(), physicalScale);
-            titleRect.setY ((int) snappedY);
-            g.drawText ("COMPASS EQ", titleRect, juce::Justification::centred, false);
-        }
+        const int titleInset = 32;
+        const int titleY = 28;
+        auto titleRect = juce::Rectangle<int> (titleInset, titleY - 12, 200, 24);
+        const float snappedY = UIStyle::Snap::snapPx ((float) titleRect.getY(), physicalScale);
+        titleRect.setY ((int) snappedY);
+
+        g.setFont (juce::Font (titleFont).withHeight (20.0f));
+        drawEngravedFitted ("Compass EQ",
+                            titleRect.getX(), titleRect.getY(), titleRect.getWidth(), titleRect.getHeight(),
+                            juce::Justification::left, 1, kTitleA, juce::Colours::white);
     }
 
-    // Column labels (driven by slot unions)
-    const int topY = juce::jmin (assetSlots.colLF.getY(),
-                                assetSlots.colLMF.getY(),
-                                assetSlots.colHMF.getY(),
-                                assetSlots.colHF.getY());
-    const int bandLabelY = topY - 18;
+    // Column labels: sit right above the colored lanes (derived from the top of the KHz knobs + lane-top extra)
+    constexpr int kBandLabelGap = 2;   // px gap between label box and lane top (slightly lower)
+    constexpr int kBandLabelH   = 14;  // drawColLabel uses a 14px-high box
+    constexpr int kLaneTopExtra = 18;  // must match drawFaceplateStage3ZonedNoSeams()
+    const int yTopKHz = juce::jmin (lfFreq.getY(), lmfFreq.getY(),
+                                   hmfFreq.getY(), hfFreq.getY());
+    const int laneTopY = yTopKHz - kLaneTopExtra;
+    const int bandLabelY = laneTopY - (kBandLabelH + kBandLabelGap);
 
     drawColLabel ("LF",  assetSlots.colLF,  bandLabelY);
     drawColLabel ("LMF", assetSlots.colLMF, bandLabelY);
@@ -954,8 +1040,9 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
     drawColLabel ("HF",  assetSlots.colHF,  bandLabelY);
 
     // Headers
-    drawHeaderAbove ("HPF", hpfFreq.getBounds(), -16);
-    drawHeaderAbove ("LPF", lpfFreq.getBounds(), -16);
+    // Raise filter titles to avoid clashing with scale numbers
+    drawHeaderAbove ("HPF", hpfFreq.getBounds(), -28);
+    drawHeaderAbove ("LPF", lpfFreq.getBounds(), -28);
 
     drawHeaderAbove ("IN",  inputMeter.getBounds(),  -16);
     drawHeaderAbove ("OUT", outputMeter.getBounds(), -16);
@@ -1000,31 +1087,125 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
             }
         }
 
-        g.setColour (UIStyle::Colors::foreground.withAlpha (kHeaderA));
         g.setFont (f);
-        g.drawFittedText ("IN",  inLabel,  juce::Justification::centred, 1);
-        g.drawFittedText ("OUT", outLabel, juce::Justification::centred, 1);
+        drawEngravedFitted ("IN",  inLabel.getX(),  inLabel.getY(),  inLabel.getWidth(),  inLabel.getHeight(),
+                            juce::Justification::centred, 1, kHeaderA, juce::Colours::white);
+        drawEngravedFitted ("OUT", outLabel.getX(), outLabel.getY(), outLabel.getWidth(), outLabel.getHeight(),
+                            juce::Justification::centred, 1, kHeaderA, juce::Colours::white);
     }
 
     // Legends
-    drawLegendBelow ("FREQ", lfFreq.getBounds(),  2);
-    drawLegendBelow ("GAIN", lfGain.getBounds(),  2);
+    drawLegendBelow ("KHz", lfFreq.getBounds(),  2);
+    drawLegendBelow ("GR",  lfGain.getBounds(),  2);
 
-    drawLegendBelow ("FREQ", lmfFreq.getBounds(), 2);
-    drawLegendBelow ("GAIN", lmfGain.getBounds(), 2);
+    drawLegendBelow ("KHz", lmfFreq.getBounds(), 2);
+    drawLegendBelow ("GR",  lmfGain.getBounds(), 2);
     drawLegendBelow ("Q",    lmfQ.getBounds(),    2);
 
-    drawLegendBelow ("FREQ", hmfFreq.getBounds(), 2);
-    drawLegendBelow ("GAIN", hmfGain.getBounds(), 2);
+    drawLegendBelow ("KHz", hmfFreq.getBounds(), 2);
+    drawLegendBelow ("GR",  hmfGain.getBounds(), 2);
     drawLegendBelow ("Q",    hmfQ.getBounds(),    2);
 
-    drawLegendBelow ("FREQ", hfFreq.getBounds(),  2);
-    drawLegendBelow ("GAIN", hfGain.getBounds(),  2);
+    drawLegendBelow ("KHz", hfFreq.getBounds(),  2);
+    drawLegendBelow ("GR",  hfGain.getBounds(),  2);
 
-    drawLegendBelow ("FREQ", hpfFreq.getBounds(), 2);
-    drawLegendBelow ("FREQ", lpfFreq.getBounds(), 2);
+    // (No "FREQ" legend under HPF/LPF per spec.)
 
     // (No "TRIM" legend under the bottom trim knobs per spec.)
+
+    // ===== Scale markings (SSL-style) — semi-circle around knob: ticks + key numbers =====
+    // Vector-only, no assets, no layout changes. Uses engraved text helper for numbers.
+    {
+        constexpr int numTicks = 13;
+        const float startRad = juce::MathConstants<float>::pi * 1.5f - juce::MathConstants<float>::pi * 0.833f;
+        const float endRad   = juce::MathConstants<float>::pi * 1.5f + juce::MathConstants<float>::pi * 0.833f;
+        const float range    = endRad - startRad;
+
+        auto drawScaleMarkings = [&g, physicalScale, drawEngravedFitted, kMicroA, startRad, range] (juce::Rectangle<int> knobBounds,
+                                                                                                     const char* const* numbers,
+                                                                                                     int numberCount)
+        {
+            if (knobBounds.isEmpty())
+                return;
+
+            const auto b = knobBounds.toFloat();
+            const float cx = UIStyle::Snap::snapPx (b.getCentreX(), physicalScale);
+            const float cy = UIStyle::Snap::snapPx (b.getCentreY() + b.getHeight() * 0.05f, physicalScale); // tighter / higher
+            const float radius = b.getWidth() * 0.50f; // smaller radius to hug knob
+
+            g.setColour (juce::Colours::silver.withAlpha (0.40f));
+
+            for (int i = 0; i <= numTicks; ++i)
+            {
+                const float t = (float) i / (float) numTicks;
+                const float ang = startRad + t * range;
+                const float len = (i % 3 == 0) ? 12.0f : 7.0f;
+
+                juce::Point<float> inner (cx + (radius - len) * std::cos (ang),
+                                          cy + (radius - len) * std::sin (ang));
+                juce::Point<float> outer (cx + radius * std::cos (ang),
+                                          cy + radius * std::sin (ang));
+
+                inner = UIStyle::Snap::snapPoint (inner, physicalScale);
+                outer = UIStyle::Snap::snapPoint (outer, physicalScale);
+
+                g.drawLine (inner.x, inner.y, outer.x, outer.y, 1.2f);
+            }
+
+            if (numbers == nullptr || numberCount < 2)
+                return;
+
+            for (int i = 0; i < numberCount; ++i)
+            {
+                const float t = (float) i / (float) (numberCount - 1);
+                const float ang = startRad + t * range;
+
+                const float x = cx + (radius + 8.0f) * std::cos (ang);
+                const float y = cy + (radius + 8.0f) * std::sin (ang);
+
+                const int w = 24;
+                const int h = 14;
+                const int xi = (int) std::lround (UIStyle::Snap::snapPx (x - (float) (w / 2), physicalScale));
+                const int yi = (int) std::lround (UIStyle::Snap::snapPx (y - (float) (h / 2), physicalScale));
+
+                drawEngravedFitted (numbers[i], xi, yi, w, h,
+                                    juce::Justification::centred, 1,
+                                    kMicroA, juce::Colours::white.withAlpha (0.85f));
+            }
+        };
+
+        // Number sets (fixed, no allocations)
+        static const char* const kFreqLF[]   = { "20", "200", "400", "600", "800" };      // 20–800 Hz
+        static const char* const kFreqLMF[]  = { "120", "1k", "2k", "3k", "4k" };         // 120–4k Hz
+        static const char* const kFreqHMF[]  = { "600", "4k", "8k", "11k", "15k" };       // 600–15k Hz
+        static const char* const kFreqHF[]   = { "1.5k", "6.5k", "12k", "17k", "22k" };   // 1.5–22k Hz
+        static const char* const kGain[]     = { "-18", "-12", "-6", "0", "+6", "+12", "+18" };
+        static const char* const kQ[]        = { "0.5", "1", "2", "4", "8" };
+
+        // LF
+        drawScaleMarkings (lfFreq.getBounds(), kFreqLF,  (int) (sizeof (kFreqLF) / sizeof (kFreqLF[0])));
+        drawScaleMarkings (lfGain.getBounds(), kGain,    (int) (sizeof (kGain) / sizeof (kGain[0])));
+
+        // LMF
+        drawScaleMarkings (lmfFreq.getBounds(), kFreqLMF, (int) (sizeof (kFreqLMF) / sizeof (kFreqLMF[0])));
+        drawScaleMarkings (lmfGain.getBounds(), kGain,    (int) (sizeof (kGain) / sizeof (kGain[0])));
+        drawScaleMarkings (lmfQ.getBounds(),    kQ,       (int) (sizeof (kQ) / sizeof (kQ[0])));
+
+        // HMF
+        drawScaleMarkings (hmfFreq.getBounds(), kFreqHMF, (int) (sizeof (kFreqHMF) / sizeof (kFreqHMF[0])));
+        drawScaleMarkings (hmfGain.getBounds(), kGain,    (int) (sizeof (kGain) / sizeof (kGain[0])));
+        drawScaleMarkings (hmfQ.getBounds(),    kQ,       (int) (sizeof (kQ) / sizeof (kQ[0])));
+
+        // HF
+        drawScaleMarkings (hfFreq.getBounds(), kFreqHF,  (int) (sizeof (kFreqHF) / sizeof (kFreqHF[0])));
+        drawScaleMarkings (hfGain.getBounds(), kGain,    (int) (sizeof (kGain) / sizeof (kGain[0])));
+
+        // Filters (frequency)
+        static const char* const kFreqHPF[]  = { "20", "300", "500", "750", "1k" };
+        static const char* const kFreqLPF[]  = { "3k", "7k", "11k", "15k", "20k" };
+        drawScaleMarkings (hpfFreq.getBounds(), kFreqHPF, (int) (sizeof (kFreqHPF) / sizeof (kFreqHPF[0])));
+        drawScaleMarkings (lpfFreq.getBounds(), kFreqLPF, (int) (sizeof (kFreqLPF) / sizeof (kFreqLPF[0])));
+    }
 
     // Ticks
     drawTick (lfFreq.getBounds(),  -2);  drawTick (lfGain.getBounds(), -2);
@@ -1205,6 +1386,7 @@ void CompassEQAudioProcessorEditor::paint (juce::Graphics& g)
         if (! staticCacheRebuildPending.exchange (true, std::memory_order_acq_rel))
             triggerAsyncUpdate();
     }
+
 }
 
 void CompassEQAudioProcessorEditor::handleAsyncUpdate()
@@ -1265,9 +1447,9 @@ void CompassEQAudioProcessorEditor::handleAsyncUpdate()
 void CompassEQAudioProcessorEditor::resized()
 {
     // ===== Layout Freeze Spec v0.1 (AUTHORITATIVE) =====
-    // Editor: 760 x 420
+    // Editor: 760 x 460
     // Grid base: 8 (all integer placement)
-    // Zones: 64 / 72 / 200 / 84 (sum 420)
+    // Zones: 64 / 72 / 240 / 84 (sum 460)
     // Margins: L/R = 24
     // Columns: LF 160, LMF 168, HMF 168, HF 160
     // Gaps: 19 / 19 / 18 (deterministic)
@@ -1290,7 +1472,7 @@ void CompassEQAudioProcessorEditor::resized()
     const int z2H = 72;
 
     const int z3Y = z2Y + z2H;
-    const int z3H = 200;
+    const int z3H = 240;
 
     const int z4Y = z3Y + z3H;
     const int z4H = 84;
@@ -1322,7 +1504,7 @@ void CompassEQAudioProcessorEditor::resized()
 
     // ----- Zone 2: Filters (HPF/LPF) -----
     const int filterKnob = 48;
-    const int filterSpacing = 32;
+    const int filterSpacing = 80;
     const int filtersTotalW = filterKnob + filterSpacing + filterKnob; // 128
 
     const int filtersStartX = marginL + ((usableW - filtersTotalW) / 2); // 316
@@ -1332,13 +1514,8 @@ void CompassEQAudioProcessorEditor::resized()
     //   - labelTopPad = 28 (header yOffset=-16, height=12)
     //   - padTop = 10, padBottom = 10
     //   - barHeight = filterKnob + labelTopPad + padTop + padBottom = 96
-    constexpr int labelTopPad = 28;
-    constexpr int padTop = 10;
-    constexpr int padBottom = 10;
-    constexpr int filterBarH = filterKnob + labelTopPad + padTop + padBottom; // 96
-    const int filterBarTop = z2Y - (16 + padTop); // top of label area (z2Y - 16) minus padTop
-    const int filterBarCenterY = filterBarTop + (int) std::lround ((float) filterBarH * 0.40f);
-    const int filtersY = filterBarCenterY - (filterKnob / 2);
+    // Raise HPF/LPF higher (negative offset = higher on screen)
+    const int filtersY = z2Y - 20;
 
     hpfFreq.setBounds (filtersStartX,                        filtersY, filterKnob, filterKnob);
     lpfFreq.setBounds (filtersStartX + filterKnob + filterSpacing, filtersY, filterKnob, filterKnob);
@@ -1365,16 +1542,24 @@ void CompassEQAudioProcessorEditor::resized()
     const int kTertiary  = 40;
 
     // Zone 3 vertical centering math (integers)
-    // LMF/HMF stack: 48 + 16 + 56 + 16 + 40 = 176 => top offset (200-176)/2 = 12
-    const int stack3Top = z3Y + 12;
-    const int lmfFreqY  = stack3Top;               // 148
-    const int lmfGainY  = lmfFreqY + 48 + 16;      // 212
-    const int lmfQY     = lmfGainY + 56 + 16;      // 284
+    // Increase vertical spacing in stacks
+    const int stackSpacing = 24;
 
-    // LF/HF stack: 48 + 20 + 56 = 124 => top offset (200-124)/2 = 38
-    const int stack2Top = z3Y + 38;
-    const int lfFreqY   = stack2Top;               // 174
-    const int lfGainY   = lfFreqY + 48 + 20;       // 242
+    // LMF/HMF stack
+    // Middle lanes: move all three knobs up together (preserve spacing).
+    // Target: top of the KHz knob kisses the top of the colored lane.
+    constexpr int midLaneShiftUp = 8;
+    const int stack3Top = (z3Y + 14) - midLaneShiftUp;
+    const int lmfFreqY  = stack3Top;
+    const int lmfQY     = (z3Y + z3H - kTertiary - 10) - midLaneShiftUp;
+    // Place GAIN so gaps are even: (Freq -> Gain) == (Gain -> Q)
+    const int lmfGap    = juce::jmax (0, (lmfQY - lmfFreqY - kSecondary - kPrimary) / 2);
+    const int lmfGainY  = lmfFreqY + kSecondary + lmfGap;
+
+    // LF/HF stack
+    const int stack2Top = z3Y + 50; // More centered
+    const int lfFreqY   = stack2Top;
+    const int lfGainY   = lfFreqY + 48 + stackSpacing + 10;
 
     auto centerX = [] (int colX, int colW, int knobW) -> int
     {
@@ -1500,15 +1685,17 @@ void CompassEQAudioProcessorEditor::resized()
         auto zone4  = editor.removeFromBottom (84).reduced (24, 0); // Zone 4 height per freeze spec
 
         // Vertical centering in Zone 4
-        constexpr int trimSize   = 56;
-        constexpr int bypassW    = 140;
+        constexpr int trimSize   = 52; // slightly smaller IN/OUT knobs
+        constexpr int bypassW    = 160;
         constexpr int bypassH    = 26; // STAGE: SSL BYPASS latch (LOCKED)
 
-        const int cy = zone4.getCentreY();
+        // Keep BYPASS where it was, but drop trims slightly to avoid lane overlap.
+        const int bypassCy = zone4.getCentreY() - 10;
+        const int trimCy   = bypassCy + 10;
 
         // BYPASS centered
         const auto bypassBounds = juce::Rectangle<int> (0, 0, bypassW, bypassH)
-                                    .withCentre ({ zone4.getCentreX(), cy });
+                                    .withCentre ({ zone4.getCentreX(), bypassCy });
         globalBypass.setBounds (bypassBounds);
 
         // Trims: symmetric around bypass, keep >= 32px spacing (4g)
@@ -1517,8 +1704,8 @@ void CompassEQAudioProcessorEditor::resized()
         const int leftTrimCx  = bypassBounds.getX() - minGapToBypass - (trimSize / 2);
         const int rightTrimCx = bypassBounds.getRight() + minGapToBypass + (trimSize / 2);
 
-        inTrim.setBounds  (juce::Rectangle<int> (0, 0, trimSize, trimSize).withCentre ({ leftTrimCx,  cy }));
-        outTrim.setBounds (juce::Rectangle<int> (0, 0, trimSize, trimSize).withCentre ({ rightTrimCx, cy }));
+        inTrim.setBounds  (juce::Rectangle<int> (0, 0, trimSize, trimSize).withCentre ({ leftTrimCx,  trimCy }));
+        outTrim.setBounds (juce::Rectangle<int> (0, 0, trimSize, trimSize).withCentre ({ rightTrimCx, trimCy }));
     }
 
     // ===== Phase 4.0 — Asset Slot Map (derived from existing bounds) =====
