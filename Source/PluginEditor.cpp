@@ -408,9 +408,10 @@ namespace
                     if (panel.isEmpty())
                         return;
 
-                    // Phase 2B (Option 2): alpha ×0.2 AND shallower contrast (pull top/bottom closer)
-                    const auto tTop = cTop.withMultipliedAlpha (0.20f);
-                    const auto tBot = cBot.withMultipliedAlpha (0.20f);
+                    // Hybrid (Option C): stronger lane identity (≈60–80% of early vibrant), but still shallow/material.
+                    constexpr float kLaneTintMul = 0.70f;
+                    const auto tTop = cTop.withMultipliedAlpha (kLaneTintMul);
+                    const auto tBot = cBot.withMultipliedAlpha (kLaneTintMul);
                     const auto mid = tTop.interpolatedWith (tBot, 0.4f); // pull toward darker
 
                     juce::ColourGradient grad (mid, panel.getCentreX(), panel.getY(),
@@ -431,19 +432,19 @@ namespace
                 const auto laneHMF = juce::Rectangle<float> (x0 + 2.0f * laneW + 2*dividerW, y1, laneW, y2 - y1);
                 const auto laneHF  = juce::Rectangle<float> (x0 + 3.0f * laneW + 3*dividerW, y1, laneW, y2 - y1);
 
-                // Soft tinted gradients per band (subtle "colored metal")
+                // Restored band personality: deep blue → purple → olive green → warm red
                 drawBandPanel (laneLF,
-                               juce::Colours::blue.withAlpha (0.18f),
-                               juce::Colours::darkblue.withAlpha (0.09f));
+                               juce::Colour (0xFF1C4FB8).withAlpha (0.28f),
+                               juce::Colour (0xFF102A64).withAlpha (0.18f));
                 drawBandPanel (laneLMF,
-                               juce::Colours::purple.withAlpha (0.15f),
-                               juce::Colours::darkslateblue.withAlpha (0.08f));
+                               juce::Colour (0xFF6A2DBA).withAlpha (0.24f),
+                               juce::Colour (0xFF2D134F).withAlpha (0.16f));
                 drawBandPanel (laneHMF,
-                               juce::Colours::forestgreen.withAlpha (0.12f),
-                               juce::Colours::darkgreen.withAlpha (0.06f));
+                               juce::Colour (0xFF5E7A3A).withAlpha (0.22f),
+                               juce::Colour (0xFF2F3F20).withAlpha (0.14f));
                 drawBandPanel (laneHF,
-                               juce::Colours::darkred.withAlpha (0.21f),
-                               juce::Colours::maroon.withAlpha (0.11f));
+                               juce::Colour (0xFFB5403A).withAlpha (0.30f),
+                               juce::Colour (0xFF4A1A18).withAlpha (0.18f));
 
                 // Etched dividers between bands (SSL strip separation)
                 g.setColour (juce::Colours::lightgrey.withAlpha (0.20f));
@@ -525,7 +526,7 @@ namespace
         strokeArcDeg ( -5.0f,  85.0f, juce::Colours::black, juce::jmin (UIStyle::occlusionAlphaMax, 0.18f));
     }
 
-    static void drawBandWell (juce::Graphics& g, juce::Rectangle<int> columnRect, float physicalScale)
+    static void drawBandWell (juce::Graphics& g, juce::Rectangle<int> columnRect, float physicalScale, juce::Colour tint = juce::Colours::transparentBlack)
     {
         if (columnRect.isEmpty()) return;
 
@@ -537,6 +538,16 @@ namespace
         // 1. Recessed fill — keep dark
         g.setColour (gray8 (26));
         g.fillRoundedRectangle (well, 12.0f);
+
+        // 1b. Light band tint wash (Option C): ties colour to the machined recess without flattening depth
+        if (tint.getAlpha() > 0)
+        {
+            juce::ColourGradient tg (tint.brighter (0.08f), well.getCentreX(), well.getY(),
+                                     tint.darker (0.10f),   well.getCentreX(), well.getBottom(),
+                                     false);
+            g.setGradientFill (tg);
+            g.fillRoundedRectangle (well, 12.0f);
+        }
 
         // 2. Rim stroke — 1px very dark (exact #111)
         g.setColour (juce::Colour (0xFF111111));
@@ -1076,10 +1087,23 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
     // Stage 5.5 lock: outside colored lanes is neutral black; do not draw non-black plate chrome here.
 
     // Phase 1 depth model: rectangular recessed band wells (replace per-knob circular wells)
-    drawBandWell (g, assetSlots.colLF,  physicalScale);
-    drawBandWell (g, assetSlots.colLMF, physicalScale);
-    drawBandWell (g, assetSlots.colHMF, physicalScale);
-    drawBandWell (g, assetSlots.colHF,  physicalScale);
+    {
+        // Option C: lightly tint the recesses (≈30–50% of lane intensity), while preserving depth cues
+        auto wellTint = [] (juce::Colour c) -> juce::Colour
+        {
+            return c.withMultipliedSaturation (0.55f).withAlpha (0.10f);
+        };
+
+        const auto tintLF  = wellTint (juce::Colour (0xFF1C4FB8)); // deep blue
+        const auto tintLMF = wellTint (juce::Colour (0xFF6A2DBA)); // purple
+        const auto tintHMF = wellTint (juce::Colour (0xFF5E7A3A)); // olive
+        const auto tintHF  = wellTint (juce::Colour (0xFFB5403A)); // warm red
+
+        drawBandWell (g, assetSlots.colLF,  physicalScale, tintLF);
+        drawBandWell (g, assetSlots.colLMF, physicalScale, tintLMF);
+        drawBandWell (g, assetSlots.colHMF, physicalScale, tintHMF);
+        drawBandWell (g, assetSlots.colHF,  physicalScale, tintHF);
+    }
 
     // ---- Keep your existing Phase 3.3 text system (headers/legends/ticks) ----
     // Phase 2: Discrete font ladder by scaleKey
