@@ -599,17 +599,14 @@ namespace
             // 2) Band accent ring + neutral body (band knobs only; filters/trim stay neutral via bandColour input)
             auto knobBounds = bounds.reduced (juce::jmax (6.0f, radius * 0.18f));
             {
-                const auto ringBounds = knobBounds.reduced (4.0f);
+                const auto ringBounds = knobBounds.reduced (3.0f);
                 const auto bodyBounds = knobBounds.reduced (6.0f);
 
                 // Thin colored ring (accent)
-                if (! ringBounds.isEmpty())
+                if (! ringBounds.isEmpty() && bandColour.getAlpha() > 0)
                 {
-                    const auto ringBase = bandColour;
-                    juce::ColourGradient ringGrad (ringBase.brighter (0.08f), cx, cy - radius * 0.35f,
-                                                   ringBase.darker (0.10f),  cx, cy + radius * 0.35f,
-                                                   false);
-                    gg.setGradientFill (ringGrad);
+                    const auto ringBase = bandColour.withMultipliedSaturation (0.65f).brighter (0.10f);
+                    gg.setColour (ringBase);
                     gg.fillEllipse (ringBounds);
                 }
 
@@ -698,11 +695,27 @@ namespace
         g.setColour (juce::Colours::white.withAlpha (0.98f));
         g.drawLine (c.x, c.y, p1.x, p1.y, w);
 
-        // Center hub (small chrome)
-        g.setColour (juce::Colours::silver);
-        g.fillEllipse (c.x - 4.0f, c.y - 4.0f, 8.0f, 8.0f);
-        g.setColour (juce::Colours::black.withAlpha (0.30f));
-        g.fillEllipse (c.x - 2.0f, c.y - 2.0f, 4.0f, 4.0f);
+        // Center hub / insert
+        if (bandColour.getAlpha() > 0)
+        {
+            // Band-colored insert (moderated)
+            g.setColour (bandColour.withMultipliedSaturation (0.70f));
+            g.fillEllipse (c.x - 6.0f, c.y - 6.0f, 12.0f, 12.0f);
+
+            // Tiny neutral pin on top (classic hardware detail)
+            g.setColour (juce::Colours::silver);
+            g.fillEllipse (c.x - 2.0f, c.y - 2.0f, 4.0f, 4.0f);
+            g.setColour (juce::Colours::black.withAlpha (0.35f));
+            g.fillEllipse (c.x - 1.0f, c.y - 1.0f, 2.0f, 2.0f);
+        }
+        else
+        {
+            // Neutral knobs (HPF/LPF/Trim): keep classic silver hub + inner dot
+            g.setColour (juce::Colours::silver);
+            g.fillEllipse (c.x - 4.0f, c.y - 4.0f, 8.0f, 8.0f);
+            g.setColour (juce::Colours::black.withAlpha (0.30f));
+            g.fillEllipse (c.x - 2.0f, c.y - 2.0f, 4.0f, 4.0f);
+        }
     }
 }
 
@@ -759,14 +772,14 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider (
     auto capColourForHue = [] (float hueDeg) -> juce::Colour
     {
         if (hueDeg < 0.0f)
-            return juce::Colours::darkgrey.brighter (0.30f); // neutral for non-band
+            return juce::Colours::transparentBlack; // sentinel: no band accents for non-band knobs
 
         // OKLab hue source + boost for solid cap look
         auto temp = stage5_bandHueToSectionBg_OkLabLinear (hueDeg, juce::Colours::darkgrey);
         return temp.withMultipliedSaturation (1.8f * 0.75f).brighter (0.20f); // desaturate 25%
     };
 
-    juce::Colour bandColour = juce::Colours::darkgrey.brighter (0.30f);
+    juce::Colour bandColour = juce::Colours::transparentBlack;
     const auto nm = s.getName();
     if (nm.startsWith ("LF"))
         bandColour = capColourForHue (UIStyle::Colors::bandHueLF);
