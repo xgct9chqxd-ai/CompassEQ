@@ -55,6 +55,39 @@ namespace
         return juce::Colour::fromRGB (g, g, g);
     }
 
+    static juce::Image createMatteNoiseTexture (int size = 512)
+    {
+        juce::Image noise (juce::Image::ARGB, size, size, true);
+        juce::Graphics ng (noise);
+        ng.fillAll (juce::Colours::black);
+
+        juce::Random rnd (0x9f3c7a2b); // fixed seed for consistency
+
+        for (int y = 0; y < size; ++y)
+        {
+            for (int x = 0; x < size; ++x)
+            {
+                // Very soft Perlin-like noise (low frequency, low contrast)
+                float n = 0.0f;
+                float amp = 1.0f;
+                float freq = 0.015f;
+                for (int oct = 0; oct < 3; ++oct)
+                {
+                    n += amp * rnd.nextFloat() * std::sin ((float) x * freq) * std::cos ((float) y * freq);
+                    amp *= 0.5f;
+                    freq *= 2.0f;
+                }
+                n = (n + 1.0f) * 0.5f; // 0..1 range
+                uint8_t v = (uint8_t) juce::jlimit (0, 255, (int) (n * 16)); // very low contrast (~8% max deviation)
+                noise.setPixelAt (x, y, juce::Colour (v, v, v));
+            }
+        }
+
+        return noise;
+    }
+
+    static const juce::Image matteNoise = createMatteNoiseTexture();
+
     // ===== SECTION BACKGROUND CONTRACT — STAGE 1 (LOCKED, NO VISUAL APPLICATION) =====
     // Baseline reference (Tier-2 fill region lock):
     //   screenshot "Screenshot 2025-12-22 at 4.01.06 PM.png"
@@ -288,8 +321,8 @@ namespace
         // Brushed metal background gradient (dark grey -> warm medium grey) + faint horizontal brush lines.
         {
             const auto b = editor.toFloat();
-            juce::ColourGradient metalGrad (juce::Colour (0xFF2a2a2a), b.getX(), b.getY(),
-                                            juce::Colour (0xFF4a4a4a), b.getX(), b.getBottom(),
+            juce::ColourGradient metalGrad (juce::Colour (0xFF323232), b.getX(), b.getY(),
+                                            juce::Colour (0xFF424242), b.getX(), b.getBottom(),
                                             false);
             g.setGradientFill (metalGrad);
             g.fillRect (b);
@@ -297,6 +330,10 @@ namespace
             g.setColour (juce::Colours::white.withAlpha (0.03f));
             for (int y = editor.getY(); y < editor.getBottom(); y += 3)
                 g.drawLine ((float) editor.getX(), (float) y, (float) editor.getRight(), (float) y, 0.5f);
+
+            // Subtle matte noise overlay on faceplate only
+            g.setTiledImageFill (matteNoise, 0, 0, 0.04f); // opacity 4% (within 2-6% spec)
+            g.fillRect (editor); // editor = full bounds
         }
 
         // STAGE 5 — ROLL-OUT TO ALL EQ BANDS (LF / LMF / HMF / HF)
