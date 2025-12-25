@@ -64,14 +64,39 @@ private:
             const auto b = getLocalBounds();
             const auto bounds = b.toFloat().reduced (1.0f);
 
-            // Meter background (dark -> slightly lighter), rounded like hardware inset
+            // Pass 2: Meter housing / frame integration (visual only)
+            // Goal: "instrument panel window" consistent with band panels (thin outer stroke + softer inner edge).
             {
-                // Phase 2 refinement: low-contrast meter inset (no "brighter" top)
-                juce::ColourGradient bgGrad (juce::Colours::darkgrey, bounds.getX(), bounds.getBottom(),
-                                             juce::Colours::darkgrey, bounds.getX(), bounds.getY(),
+                const auto frame = b.toFloat().reduced (0.5f);
+                g.setColour (juce::Colours::silver.withAlpha (0.22f));
+                g.drawRoundedRectangle (frame, 4.0f, 1.0f);
+
+                g.setColour (juce::Colours::black.withAlpha (0.28f));
+                g.drawRoundedRectangle (frame.reduced (0.75f), 3.5f, 0.60f);
+            }
+
+            // Pass 2: Track (background channel) — lower contrast, subtle recess (no bright slot)
+            {
+                const auto trackTop = juce::Colour (0xFF151515);
+                const auto trackBot = juce::Colour (0xFF101010);
+                juce::ColourGradient bgGrad (trackTop, bounds.getX(), bounds.getY(),
+                                             trackBot, bounds.getX(), bounds.getBottom(),
                                              false);
                 g.setGradientFill (bgGrad);
                 g.fillRoundedRectangle (bounds, 4.0f);
+
+                // Optional restrained tie-in tint (meters only; felt not seen)
+                if (isInput)
+                    g.setColour (juce::Colour (0xFF0088FF).withAlpha (0.015f));
+                else
+                    g.setColour (juce::Colour (0xFFFF4444).withAlpha (0.015f));
+                g.fillRoundedRectangle (bounds, 4.0f);
+
+                // Subtle inner edge for depth (very light)
+                g.setColour (juce::Colours::white.withAlpha (0.06f));
+                g.drawRoundedRectangle (bounds.reduced (0.5f), 3.5f, 0.60f);
+                g.setColour (juce::Colours::black.withAlpha (0.24f));
+                g.drawRoundedRectangle (bounds.reduced (1.0f), 3.0f, 0.60f);
             }
 
             // LED ladder config (SSL-ish)
@@ -156,8 +181,19 @@ private:
                 // Phase 2: Snap dot Y position
                 const float y = UIStyle::Snap::snapPx (yBottom - (float) i * (dotD + gap), physicalScale);
 
+                const auto dot = juce::Rectangle<float> (x, y, dotD, dotD);
                 g.setColour (c);
-                g.fillRoundedRectangle (juce::Rectangle<float> (x, y, dotD, dotD), dotD * 0.30f);
+                g.fillRoundedRectangle (dot, dotD * 0.30f);
+
+                // Pass 2: Fill quality (premium, restrained) — tiny highlight on lit segments only
+                if (on)
+                {
+                    const float px = juce::jmax (1.0f, 1.0f / physicalScale);
+                    g.setColour (juce::Colours::white.withAlpha (0.10f));
+                    g.drawLine (dot.getX() + px, dot.getY() + px,
+                                dot.getRight() - px, dot.getY() + px,
+                                1.0f * px);
+                }
             }
 
             // Subtle dB tick marks (within meter lane; no external labels due to narrow meter width)
