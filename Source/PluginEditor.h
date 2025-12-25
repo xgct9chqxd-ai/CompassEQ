@@ -19,6 +19,7 @@ public:
 private:
     void handleAsyncUpdate() override;
     void renderStaticLayer (juce::Graphics& g, float scaleKey, float physicalScale);
+    void ensureBackgroundNoiseTile();
     using APVTS = juce::AudioProcessorValueTreeState;
     using SliderAttachment = APVTS::SliderAttachment;
     using ButtonAttachment = APVTS::ButtonAttachment;
@@ -596,6 +597,9 @@ private:
     StaticLayerCache staticCache;
     std::atomic<bool> staticCacheDirty { true };
     std::atomic<bool> staticCacheRebuildPending { false };
+
+    // ---------------- Pass 5: Background grain (cached; no per-frame randomness) ----------------
+    juce::Image backgroundNoiseTile;
 
     // Phase 4: Teardown safety guard (UI thread only, no need for atomic)
     bool isTearingDown = false;

@@ -310,6 +310,7 @@ namespace
     static void drawFaceplateStage3ZonedNoSeams (
         juce::Graphics& g,
         juce::Rectangle<int> editor,
+        const juce::Image& backgroundNoiseTile,
         juce::Rectangle<int> zoneHeader,
         juce::Rectangle<int> zoneFilters,
         juce::Rectangle<int> zoneBands,
@@ -332,30 +333,33 @@ namespace
             return;
 
         // ===== Modern premium console panel (base) =====
-        // Brushed metal background gradient (dark grey -> warm medium grey) + faint horizontal brush lines.
+        // Pass 5: Background treatment (matte depth + minimal grain + subtle vignette)
         {
             const auto b = editor.toFloat();
-            // Pass 1: lighten the main faceplate background very slightly (breathing room; barely noticeable)
-            juce::ColourGradient metalGrad (juce::Colour (0xFF3A3A3A), b.getX(), b.getY(),
-                                            juce::Colour (0xFF4E4E4E), b.getX(), b.getBottom(),
+            // A) Base matte depth gradient (very subtle)
+            juce::ColourGradient metalGrad (juce::Colour (0xFF2E2E2E), 0.0f, 0.0f,
+                                            juce::Colour (0xFF282828), 0.0f, (float) editor.getHeight(),
                                             false);
             g.setGradientFill (metalGrad);
-            g.fillRect (b);
+            g.fillAll();
 
-            g.setColour (juce::Colours::white.withAlpha (0.035f));
-            for (int y = editor.getY(); y < editor.getBottom(); y += 3)
-                g.drawLine ((float) editor.getX(), (float) y, (float) editor.getRight(), (float) y, 0.5f);
-
-            // Subtle matte noise overlay on faceplate only
-            g.setTiledImageFill (matteNoise, 0, 0, 0.05f); // opacity 5% (within 2-6% spec)
-            g.fillRect (editor); // editor = full bounds
-
-            // Ultra-subtle vignette (lens/light falloff on the physical plate), under everything
+            // B) Minimal grain overlay (stable; no per-frame generation)
+            if (backgroundNoiseTile.isValid())
             {
-                juce::ColourGradient vignette (juce::Colours::transparentBlack, b.getCentreX(), b.getCentreY(),
-                                               juce::Colours::black.withAlpha (0.08f), b.getCentreX(), b.getCentreY(),
-                                               true); // radial
-                vignette.multiplyOpacity (0.05f); // shallow
+                juce::Graphics::ScopedSaveState ss (g);
+                g.setTiledImageFill (backgroundNoiseTile, 0, 0, 1.0f);
+                g.setOpacity (0.03f); // target range 0.02–0.04
+                g.fillRect (editor);
+            }
+
+            // C) Subtle vignette (edge framing; restrained)
+            {
+                const float cx = b.getCentreX();
+                const float cy = b.getCentreY();
+                const float radius = juce::jmax (b.getWidth(), b.getHeight()) * 0.85f;
+                juce::ColourGradient vignette (juce::Colours::transparentBlack, cx, cy,
+                                               juce::Colours::black.withAlpha (0.05f), cx, cy + radius,
+                                               true);
                 g.setGradientFill (vignette);
                 g.fillRect (b);
             }
@@ -1145,6 +1149,27 @@ void CompassEQAudioProcessorEditor::configureKnob (CompassSlider& s, const char*
     s.setLookAndFeel (lookAndFeel.get());
 }
 
+void CompassEQAudioProcessorEditor::ensureBackgroundNoiseTile()
+{
+    if (backgroundNoiseTile.isValid())
+        return;
+
+    constexpr int size = 256; // small tile; stable and cheap to generate
+    backgroundNoiseTile = juce::Image (juce::Image::RGB, size, size, false);
+
+    juce::Random rnd (0x5EEDB00F); // fixed seed => no shimmer across repaints
+
+    for (int y = 0; y < size; ++y)
+    {
+        for (int x = 0; x < size; ++x)
+        {
+            // Minimal matte grain: mid-greys only (110–145), no per-frame generation.
+            const uint8_t v = (uint8_t) (110 + rnd.nextInt (36));
+            backgroundNoiseTile.setPixelAt (x, y, juce::Colour (v, v, v));
+        }
+    }
+}
+
 void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float scaleKey, float physicalScale)
 {
     // ===== Phase 5.0 — Asset-Ready Paint Layer (vector-only, no images) =====
@@ -1169,10 +1194,12 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
     constexpr float kTickA    = UIStyle::TextAlpha::tick;
 
     const auto editor = getLocalBounds();
+    ensureBackgroundNoiseTile();
     // Stage 3: value-only zone deltas (no seams) + Stage 2 uniform lighting lock
     drawFaceplateStage3ZonedNoSeams (
         g,
         editor,
+        backgroundNoiseTile,
         assetSlots.headerZone,
         assetSlots.filtersZone,
         assetSlots.bandsZone,
