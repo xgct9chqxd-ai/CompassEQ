@@ -1272,12 +1272,15 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
                           w, h, just, maxLines);
     };
 
-    const float kSectionA = juce::jmin (1.0f, kHeaderA * 1.10f); // section anchors slightly stronger
-    const float kLegendA  = kMicroA * 0.85f;                     // secondary markings slightly lower
+    // Pass 3 (redo): explicit, screenshot-obvious hierarchy
+    const float kSectionA = 1.00f; // section anchors (LF/LMF/HMF/HF, HPF/LPF, IN/OUT)
+    const float kPrimaryA = 0.90f; // primary scale text (numbers around knobs)
+    const float kLegendA  = 0.78f; // secondary markings (KHz/GR/Q legends)
 
-    auto drawHeaderAbove = [&g, &headerFont, kHeaderA, kSectionA, physicalScale, drawEngravedFitted] (const char* txt, juce::Rectangle<int> b, int yOffset)
+    auto drawHeaderAbove = [&g, &headerFont, kSectionA, physicalScale, drawEngravedFitted] (const char* txt, juce::Rectangle<int> b, int yOffset)
     {
-        g.setFont (headerFont.withExtraKerningFactor (-0.04f));
+        // Section labels: bold, slightly larger, slightly opened tracking
+        g.setFont (headerFont.withHeight (12.0f).withExtraKerningFactor (0.04f));
         // Phase 2: Snap baseline Y
         const float snappedY = UIStyle::Snap::snapPx ((float) (b.getY() + yOffset), physicalScale);
         drawEngravedFitted (txt, b.getX(), (int) snappedY, b.getWidth(), 12,
@@ -1286,7 +1289,8 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
 
     auto drawLegendBelow = [&g, &microFont, kLegendA, physicalScale, drawEngravedFitted] (const char* txt, juce::Rectangle<int> b, int yOffset)
     {
-        g.setFont (microFont.withHeight (microFont.getHeight() - 0.5f).withExtraKerningFactor (-0.06f));
+        // Secondary markings: smaller + dimmer + slightly opened tracking
+        g.setFont (microFont.withHeight (8.0f).withExtraKerningFactor (0.02f));
         // Phase 2: Snap baseline Y
         const float snappedY = UIStyle::Snap::snapPx ((float) (b.getBottom() + yOffset), physicalScale);
         drawEngravedFitted (txt, b.getX(), (int) snappedY, b.getWidth(), 12,
@@ -1304,7 +1308,8 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
 
     auto drawColLabel = [&g, &headerFont, kSectionA, physicalScale, drawEngravedFitted] (const char* txt, juce::Rectangle<int> columnBounds, int y)
     {
-        g.setFont (headerFont.withExtraKerningFactor (-0.04f));
+        // Band labels: bold anchor, slightly opened tracking
+        g.setFont (headerFont.withHeight (12.0f).withExtraKerningFactor (0.05f));
         // Phase 2: Snap baseline Y
         const float snappedY = UIStyle::Snap::snapPx ((float) y, physicalScale);
         drawEngravedFitted (txt, columnBounds.getX(), (int) snappedY, columnBounds.getWidth(), 14,
@@ -1366,7 +1371,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
 
         // Collision guard vs BYPASS: reduce gap, then reduce font size one step (trim labels only).
         bool reduceFont = false;
-        auto f = headerFont;
+        auto f = headerFont.withHeight (12.0f).withExtraKerningFactor (0.04f);
 
         auto inLabel = makeLabelRect (inTrim.getBounds(), labelGap, f);
         auto outLabel = makeLabelRect (outTrim.getBounds(), labelGap, f);
@@ -1389,9 +1394,9 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
 
         g.setFont (f);
         drawEngravedFitted ("IN",  inLabel.getX(),  inLabel.getY(),  inLabel.getWidth(),  inLabel.getHeight(),
-                            juce::Justification::centred, 1, kHeaderA, juce::Colours::white);
+                            juce::Justification::centred, 1, kSectionA, juce::Colours::white);
         drawEngravedFitted ("OUT", outLabel.getX(), outLabel.getY(), outLabel.getWidth(), outLabel.getHeight(),
-                            juce::Justification::centred, 1, kHeaderA, juce::Colours::white);
+                            juce::Justification::centred, 1, kSectionA, juce::Colours::white);
     }
 
     // Legends
@@ -1421,7 +1426,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
         const float endRad   = juce::MathConstants<float>::pi * 1.5f + juce::MathConstants<float>::pi * 0.833f;
         const float range    = endRad - startRad;
 
-        auto drawScaleMarkings = [&g, physicalScale, drawEngravedFitted, &microFont, kMicroA, startRad, range] (juce::Rectangle<int> knobBounds,
+        auto drawScaleMarkings = [&g, physicalScale, drawEngravedFitted, &microFont, kPrimaryA, startRad, range] (juce::Rectangle<int> knobBounds,
                                                                                                      const char* const* numbers,
                                                                                                      int numberCount)
         {
@@ -1455,8 +1460,8 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
             if (numbers == nullptr || numberCount < 2)
                 return;
 
-            // Micro font: slight negative tracking for silkscreen-like density
-            g.setFont (microFont.withHeight (microFont.getHeight() - 0.25f).withExtraKerningFactor (-0.06f));
+            // Primary scale text: regular, slightly larger, slightly tightened tracking
+            g.setFont (microFont.withHeight (10.0f).withExtraKerningFactor (-0.03f));
             const float px1 = 1.0f / juce::jmax (1.0f, physicalScale);
 
             for (int i = 0; i < numberCount; ++i)
@@ -1474,7 +1479,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
 
                 drawEngravedFitted (numbers[i], xi, yi, w, h,
                                     juce::Justification::centred, 1,
-                                    kMicroA, juce::Colours::white.withAlpha (0.92f));
+                                    kPrimaryA, juce::Colours::white.withAlpha (0.95f));
 
                 // Scale numbers: subtle bottom ink pass for printed depth
                 g.setColour (juce::Colours::black.withAlpha (0.10f));

@@ -36,9 +36,10 @@ namespace UIStyle
     // ===== Text alphas (paint hygiene ladder) =====
     namespace TextAlpha
     {
-        constexpr float title = 0.90f;
-        constexpr float header = 0.82f; // Pass 3: section labels slightly higher contrast
-        constexpr float micro = 0.52f;  // Pass 3: primary scale text readability (still below headers)
+        // Pass 3 (redo): make hierarchy screenshot-obvious.
+        constexpr float title  = 0.92f;
+        constexpr float header = 0.95f; // section anchors
+        constexpr float micro  = 0.85f; // primary scale text
         constexpr float tick = 0.30f;
     }
 
@@ -170,10 +171,11 @@ namespace UIStyle
         // Use a system-safe face; JUCE will fall back if not available.
         inline juce::Font makeUiSans (float height, int styleFlags)
         {
-            juce::Font f ("Arial", height, styleFlags);
-            // Slightly condensed feel without switching families (helps keep existing fitted text stable).
-            f.setHorizontalScale (0.95f);
-            return f;
+           #if JUCE_MAC
+            return juce::Font ("Helvetica Neue", height, styleFlags);
+           #else
+            return juce::Font ("Arial", height, styleFlags);
+           #endif
         }
 
         // Prebuilt font tables for 1.00 and 2.00 scale keys (ODR-safe inline variables)

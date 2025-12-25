@@ -540,7 +540,16 @@ private:
     class CompassLookAndFeel final : public juce::LookAndFeel_V4
     {
     public:
-        explicit CompassLookAndFeel (CompassEQAudioProcessorEditor& e) : editor (e) {}
+        explicit CompassLookAndFeel (CompassEQAudioProcessorEditor& e) : editor (e)
+        {
+            // Pass 3 (redo): Force a single sans-serif family at the LookAndFeel level.
+            // This ensures *all* JUCE text (Labels, TextEditors, etc.) uses the same family.
+           #if JUCE_MAC
+            setDefaultSansSerifTypefaceName ("Helvetica Neue");
+           #else
+            setDefaultSansSerifTypefaceName ("Arial");
+           #endif
+        }
         
         void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
                                float sliderPos, float rotaryStartAngle, float rotaryEndAngle,
