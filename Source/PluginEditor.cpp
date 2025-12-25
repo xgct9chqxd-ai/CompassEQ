@@ -1244,6 +1244,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
                                         juce::Colour mainCol)
     {
         const auto ink = juce::Colour (0xFFE8E8E8);
+        const auto mainInk = mainCol.isTransparent() ? ink : mainCol;
 
         // 1) Shadow (engraved depth)
         g.setColour (juce::Colours::black.withAlpha (juce::jlimit (0.0f, 1.0f, 0.80f * baseAlpha)));
@@ -1253,8 +1254,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
                           w, h, just, maxLines);
 
         // 2) Main fill (slightly brighter)
-        juce::ignoreUnused (mainCol);
-        g.setColour (ink.withAlpha (juce::jlimit (0.0f, 1.0f, 1.00f * baseAlpha)));
+        g.setColour (mainInk.withAlpha (juce::jlimit (0.0f, 1.0f, 1.00f * baseAlpha)));
         g.drawFittedText (txt, x, y, w, h, just, maxLines);
 
         // 3) Subtle bevel (thin bright pass)
@@ -1272,22 +1272,25 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
                           w, h, just, maxLines);
     };
 
-    auto drawHeaderAbove = [&g, &headerFont, kHeaderA, physicalScale, drawEngravedFitted] (const char* txt, juce::Rectangle<int> b, int yOffset)
+    const float kSectionA = juce::jmin (1.0f, kHeaderA * 1.10f); // section anchors slightly stronger
+    const float kLegendA  = kMicroA * 0.85f;                     // secondary markings slightly lower
+
+    auto drawHeaderAbove = [&g, &headerFont, kHeaderA, kSectionA, physicalScale, drawEngravedFitted] (const char* txt, juce::Rectangle<int> b, int yOffset)
     {
-        g.setFont (headerFont.withExtraKerningFactor (-0.05f));
+        g.setFont (headerFont.withExtraKerningFactor (-0.04f));
         // Phase 2: Snap baseline Y
         const float snappedY = UIStyle::Snap::snapPx ((float) (b.getY() + yOffset), physicalScale);
         drawEngravedFitted (txt, b.getX(), (int) snappedY, b.getWidth(), 12,
-                            juce::Justification::centred, 1, kHeaderA, juce::Colours::white);
+                            juce::Justification::centred, 1, kSectionA, juce::Colours::white);
     };
 
-    auto drawLegendBelow = [&g, &microFont, kHeaderA, physicalScale, drawEngravedFitted] (const char* txt, juce::Rectangle<int> b, int yOffset)
+    auto drawLegendBelow = [&g, &microFont, kLegendA, physicalScale, drawEngravedFitted] (const char* txt, juce::Rectangle<int> b, int yOffset)
     {
-        g.setFont (microFont.withExtraKerningFactor (-0.075f));
+        g.setFont (microFont.withHeight (microFont.getHeight() - 0.5f).withExtraKerningFactor (-0.06f));
         // Phase 2: Snap baseline Y
         const float snappedY = UIStyle::Snap::snapPx ((float) (b.getBottom() + yOffset), physicalScale);
         drawEngravedFitted (txt, b.getX(), (int) snappedY, b.getWidth(), 12,
-                            juce::Justification::centred, 1, kHeaderA, juce::Colours::white);
+                            juce::Justification::centred, 1, kLegendA, juce::Colours::white.withAlpha (0.86f));
     };
 
     auto drawTick = [&g, kTickA, physicalScale, hairlineStroke] (juce::Rectangle<int> b, int yOffset)
@@ -1299,13 +1302,13 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
         g.drawLine (cx, y0, cx, y1, hairlineStroke);
     };
 
-    auto drawColLabel = [&g, &headerFont, kHeaderA, physicalScale, drawEngravedFitted] (const char* txt, juce::Rectangle<int> columnBounds, int y)
+    auto drawColLabel = [&g, &headerFont, kSectionA, physicalScale, drawEngravedFitted] (const char* txt, juce::Rectangle<int> columnBounds, int y)
     {
-        g.setFont (headerFont.withExtraKerningFactor (-0.05f));
+        g.setFont (headerFont.withExtraKerningFactor (-0.04f));
         // Phase 2: Snap baseline Y
         const float snappedY = UIStyle::Snap::snapPx ((float) y, physicalScale);
         drawEngravedFitted (txt, columnBounds.getX(), (int) snappedY, columnBounds.getWidth(), 14,
-                            juce::Justification::centred, 1, kHeaderA, juce::Colours::white);
+                            juce::Justification::centred, 1, kSectionA, juce::Colours::white);
     };
 
     // Title (top-left; smaller; engraved) — geometry is fixed relative to editor
@@ -1453,7 +1456,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
                 return;
 
             // Micro font: slight negative tracking for silkscreen-like density
-            g.setFont (microFont.withExtraKerningFactor (-0.075f));
+            g.setFont (microFont.withHeight (microFont.getHeight() - 0.25f).withExtraKerningFactor (-0.06f));
             const float px1 = 1.0f / juce::jmax (1.0f, physicalScale);
 
             for (int i = 0; i < numberCount; ++i)
@@ -1471,7 +1474,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
 
                 drawEngravedFitted (numbers[i], xi, yi, w, h,
                                     juce::Justification::centred, 1,
-                                    kMicroA, juce::Colours::white.withAlpha (0.85f));
+                                    kMicroA, juce::Colours::white.withAlpha (0.92f));
 
                 // Scale numbers: subtle bottom ink pass for printed depth
                 g.setColour (juce::Colours::black.withAlpha (0.10f));

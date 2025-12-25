@@ -37,8 +37,8 @@ namespace UIStyle
     namespace TextAlpha
     {
         constexpr float title = 0.90f;
-        constexpr float header = 0.75f;
-        constexpr float micro = 0.45f;
+        constexpr float header = 0.82f; // Pass 3: section labels slightly higher contrast
+        constexpr float micro = 0.52f;  // Pass 3: primary scale text readability (still below headers)
         constexpr float tick = 0.30f;
     }
 
@@ -166,22 +166,23 @@ namespace UIStyle
     // Phase 3: Static prebuilt tables to avoid per-paint construction
     namespace FontLadder
     {
-        // Condensed sans-serif system-safe family:
-        // - Prefer Arial Narrow when available
-        // - Fallback to default sans serif
-        inline juce::Font makeCondensed (float height, int styleFlags)
+        // Pass 3: One clean, neutral sans-serif family across the UI (no mixing).
+        // Use a system-safe face; JUCE will fall back if not available.
+        inline juce::Font makeUiSans (float height, int styleFlags)
         {
-            // JUCE will fall back to a system font if the requested face isn't available.
-            return juce::Font ("Arial Narrow", height, styleFlags);
+            juce::Font f ("Arial", height, styleFlags);
+            // Slightly condensed feel without switching families (helps keep existing fitted text stable).
+            f.setHorizontalScale (0.95f);
+            return f;
         }
 
         // Prebuilt font tables for 1.00 and 2.00 scale keys (ODR-safe inline variables)
-        inline const juce::Font titleFont_1_00  = makeCondensed (18.0f, juce::Font::bold);
-        inline const juce::Font titleFont_2_00  = makeCondensed (18.0f, juce::Font::bold);
-        inline const juce::Font headerFont_1_00 = makeCondensed (11.0f, juce::Font::bold);
-        inline const juce::Font headerFont_2_00 = makeCondensed (11.0f, juce::Font::bold);
-        inline const juce::Font microFont_1_00  = makeCondensed (9.0f,  juce::Font::plain);
-        inline const juce::Font microFont_2_00  = makeCondensed (9.0f,  juce::Font::plain);
+        inline const juce::Font titleFont_1_00  = makeUiSans (18.0f, juce::Font::bold);
+        inline const juce::Font titleFont_2_00  = makeUiSans (18.0f, juce::Font::bold);
+        inline const juce::Font headerFont_1_00 = makeUiSans (11.0f, juce::Font::bold);
+        inline const juce::Font headerFont_2_00 = makeUiSans (11.0f, juce::Font::bold);
+        inline const juce::Font microFont_1_00  = makeUiSans (9.0f,  juce::Font::plain);
+        inline const juce::Font microFont_2_00  = makeUiSans (9.0f,  juce::Font::plain);
 
         inline const juce::Font& titleFont (float scaleKey)
         {

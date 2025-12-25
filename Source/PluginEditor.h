@@ -359,7 +359,7 @@ private:
             auto bounds = getLocalBounds().toFloat();
             const float px = 1.0f / physicalScale;
             const auto& font = UIStyle::FontLadder::headerFont (scaleKey);
-            g.setFont (font.withHeight (font.getHeight() * 1.1f).withExtraKerningFactor (-0.05f));
+            g.setFont (font.withHeight (font.getHeight() * 1.1f).withExtraKerningFactor (-0.04f));
 
             // Snap baseline Y
             const float snappedY = UIStyle::Snap::snapPx (bounds.getY(), physicalScale);
@@ -456,7 +456,7 @@ private:
             const auto txt = getButtonText();
             const auto just = juce::Justification::centred;
 
-            g.setFont (UIStyle::FontLadder::headerFont (1.0f).withHeight (12.0f).withExtraKerningFactor (-0.05f));
+            g.setFont (UIStyle::FontLadder::headerFont (1.0f).withHeight (12.0f).withExtraKerningFactor (-0.04f));
 
             // Phase 4 silkscreen/engraved text (match drawEngravedFitted tuning)
             g.setColour (juce::Colours::black.withAlpha (0.80f));
