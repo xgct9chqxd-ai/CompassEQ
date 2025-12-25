@@ -64,39 +64,44 @@ private:
             const auto b = getLocalBounds();
             const auto bounds = b.toFloat().reduced (1.0f);
 
-            // Pass 2: Meter housing / frame integration (visual only)
-            // Goal: "instrument panel window" consistent with band panels (thin outer stroke + softer inner edge).
+            // Pass 2 (redo): Meter housing / frame integration (visual only)
+            // Must read as an installed "instrument window" at idle (outer frame + inner bevel edges).
             {
                 const auto frame = b.toFloat().reduced (0.5f);
-                g.setColour (juce::Colours::silver.withAlpha (0.22f));
-                g.drawRoundedRectangle (frame, 4.0f, 1.0f);
+                const auto frameInner = frame.reduced (1.0f);
 
-                g.setColour (juce::Colours::black.withAlpha (0.28f));
-                g.drawRoundedRectangle (frame.reduced (0.75f), 3.5f, 0.60f);
+                // Outer frame stroke (clearly present, still thin)
+                g.setColour (juce::Colours::silver.withAlpha (0.30f));
+                g.drawRoundedRectangle (frame, 4.0f, 1.15f);
+
+                // Inner edge softening (bevel language): top highlight + bottom occlusion
+                g.setColour (juce::Colours::white.withAlpha (0.12f));
+                g.drawRoundedRectangle (frameInner, 3.5f, 0.70f);
+
+                g.setColour (juce::Colours::black.withAlpha (0.42f));
+                g.drawRoundedRectangle (frameInner.reduced (0.75f), 3.0f, 0.65f);
             }
 
-            // Pass 2: Track (background channel) — lower contrast, subtle recess (no bright slot)
+            // Pass 2 (redo): Track (background channel) — calmer + visibly recessed
             {
-                const auto trackTop = juce::Colour (0xFF151515);
-                const auto trackBot = juce::Colour (0xFF101010);
+                const auto trackTop = juce::Colour (0xFF141414);
+                const auto trackBot = juce::Colour (0xFF0B0B0B);
                 juce::ColourGradient bgGrad (trackTop, bounds.getX(), bounds.getY(),
                                              trackBot, bounds.getX(), bounds.getBottom(),
                                              false);
                 g.setGradientFill (bgGrad);
                 g.fillRoundedRectangle (bounds, 4.0f);
 
-                // Optional restrained tie-in tint (meters only; felt not seen)
-                if (isInput)
-                    g.setColour (juce::Colour (0xFF0088FF).withAlpha (0.015f));
-                else
-                    g.setColour (juce::Colour (0xFFFF4444).withAlpha (0.015f));
+                // Required: restrained tint tie-in (meters only) — barely perceptible at idle
+                const auto tint = isInput ? juce::Colour (0xFF0088FF) : juce::Colour (0xFFFF4444);
+                g.setColour (tint.withAlpha (0.020f));
                 g.fillRoundedRectangle (bounds, 4.0f);
 
-                // Subtle inner edge for depth (very light)
-                g.setColour (juce::Colours::white.withAlpha (0.06f));
-                g.drawRoundedRectangle (bounds.reduced (0.5f), 3.5f, 0.60f);
-                g.setColour (juce::Colours::black.withAlpha (0.24f));
-                g.drawRoundedRectangle (bounds.reduced (1.0f), 3.0f, 0.60f);
+                // Recess shading: subtle inner darkening + outer edge lift (read as "slot")
+                g.setColour (juce::Colours::black.withAlpha (0.45f));
+                g.drawRoundedRectangle (bounds.reduced (0.6f), 3.5f, 0.70f);
+                g.setColour (juce::Colours::white.withAlpha (0.08f));
+                g.drawRoundedRectangle (bounds.reduced (1.2f), 3.0f, 0.60f);
             }
 
             // LED ladder config (SSL-ish)
@@ -168,7 +173,17 @@ private:
                     c = yellow.interpolatedWith (red, u);
                 }
 
-                const float a = on ? 0.92f : 0.14f;
+                // Pass 2 (redo): calm unlit dots (less "harsh LED strip"), premium lit dots.
+                const float a = on ? 0.92f : 0.08f;
+
+                // Required tint tie-in: stronger when signal is present (applies to lit fill only)
+                // Keep saturation low; blend is modest and only when "on".
+                if (on)
+                {
+                    const auto tint = isInput ? juce::Colour (0xFF62A8FF) : juce::Colour (0xFFFF8A7A);
+                    c = c.interpolatedWith (tint, 0.12f);
+                }
+
                 return c.withAlpha (a);
             };
 
@@ -182,17 +197,29 @@ private:
                 const float y = UIStyle::Snap::snapPx (yBottom - (float) i * (dotD + gap), physicalScale);
 
                 const auto dot = juce::Rectangle<float> (x, y, dotD, dotD);
-                g.setColour (c);
-                g.fillRoundedRectangle (dot, dotD * 0.30f);
-
-                // Pass 2: Fill quality (premium, restrained) — tiny highlight on lit segments only
                 if (on)
                 {
+                    // Pass 2 (redo): premium fill — subtle vertical gradient inside lit dots (visible improvement)
+                    auto cTop = c.brighter (0.12f);
+                    auto cBot = c.darker (0.10f);
+                    juce::ColourGradient fillGrad (cTop, dot.getCentreX(), dot.getY(),
+                                                   cBot, dot.getCentreX(), dot.getBottom(),
+                                                   false);
+                    g.setGradientFill (fillGrad);
+                    g.fillRoundedRectangle (dot, dotD * 0.30f);
+
+                    // Tiny spec line (kept restrained)
                     const float px = juce::jmax (1.0f, 1.0f / physicalScale);
                     g.setColour (juce::Colours::white.withAlpha (0.10f));
                     g.drawLine (dot.getX() + px, dot.getY() + px,
                                 dot.getRight() - px, dot.getY() + px,
                                 1.0f * px);
+                }
+                else
+                {
+                    // Unlit dots: subdued, low-contrast (recede into the track)
+                    g.setColour (c);
+                    g.fillRoundedRectangle (dot, dotD * 0.30f);
                 }
             }
 
