@@ -331,17 +331,18 @@ namespace
         if (editor.isEmpty())
             return;
 
-        // ===== Waves SSL-inspired console panel (base) =====
+        // ===== Modern premium console panel (base) =====
         // Brushed metal background gradient (dark grey -> warm medium grey) + faint horizontal brush lines.
         {
             const auto b = editor.toFloat();
-            juce::ColourGradient metalGrad (juce::Colour (0xFF303030), b.getX(), b.getY(),
-                                            juce::Colour (0xFF404040), b.getX(), b.getBottom(),
+            // Pass 1: lighten the main faceplate background very slightly (breathing room; barely noticeable)
+            juce::ColourGradient metalGrad (juce::Colour (0xFF3A3A3A), b.getX(), b.getY(),
+                                            juce::Colour (0xFF4E4E4E), b.getX(), b.getBottom(),
                                             false);
             g.setGradientFill (metalGrad);
             g.fillRect (b);
 
-            g.setColour (juce::Colours::white.withAlpha (0.03f));
+            g.setColour (juce::Colours::white.withAlpha (0.035f));
             for (int y = editor.getY(); y < editor.getBottom(); y += 3)
                 g.drawLine ((float) editor.getX(), (float) y, (float) editor.getRight(), (float) y, 0.5f);
 
@@ -393,13 +394,13 @@ namespace
                 const float xDiv2 = x0 + 2.0f * laneW + 1.0f * dividerW;
                 const float xDiv3 = x0 + 3.0f * laneW + 2.0f * dividerW;
 
-                // Shrink the TOP of the colored lanes so it starts at the top of the FREQ (KHz) knob.
-                // Do not change knob positions; do not change the lane bottom.
-                constexpr float kLaneTopExtra = 18.0f;
+                // Colored lane vertical span (visual-only): extend slightly so markings/labels don't clip.
+                // Do not change knob positions; only the painted lane extents.
+                constexpr float kLaneTopExtra = 24.0f;
                 const int yTopKHz = juce::jmin (lfFreqKnob.getY(), lmfFreqKnob.getY(),
                                                hmfFreqKnob.getY(), hfFreqKnob.getY());
                 const float y1 = (float) yTopKHz - kLaneTopExtra; // raise lane top slightly above the KHz knob
-                const float y2 = (float) bandsRect.getBottom() + 6.0f;
+                const float y2 = (float) bandsRect.getBottom() + 12.0f;
 
                 // Soft band panels (colored metal tints; no hard blocks)
                 auto drawBandPanel = [&] (juce::Rectangle<float> lane, juce::Colour cTop, juce::Colour cBot)
@@ -408,8 +409,8 @@ namespace
                     if (panel.isEmpty())
                         return;
 
-                    // Hybrid (Option C): stronger lane identity (≈60–80% of early vibrant), but still shallow/material.
-                    constexpr float kLaneTintMul = 0.70f;
+                    // Max vibrancy pass: bold but still material (shallow falloff)
+                    constexpr float kLaneTintMul = 1.00f;
                     const auto tTop = cTop.withMultipliedAlpha (kLaneTintMul);
                     const auto tBot = cBot.withMultipliedAlpha (kLaneTintMul);
                     const auto mid = tTop.interpolatedWith (tBot, 0.4f); // pull toward darker
@@ -420,11 +421,11 @@ namespace
                     g.setGradientFill (grad);
                     g.fillRoundedRectangle (panel, 12.0f);
 
-                    // Thin engraved borders (silver outer + inner shadow)
+                    // Pass 1: Reduce visual weight — thinner borders + softer inner "shadow" stroke
                     g.setColour (juce::Colours::silver.withAlpha (0.30f));
-                    g.drawRoundedRectangle (panel, 12.0f, 1.5f);
-                    g.setColour (juce::Colours::black.withAlpha (0.50f));
-                    g.drawRoundedRectangle (panel.reduced (0.5f), 12.0f, 0.8f);
+                    g.drawRoundedRectangle (panel, 12.0f, 1.15f);                 // ~23% thinner
+                    g.setColour (juce::Colours::black.withAlpha (0.40f));          // ~20% lower opacity
+                    g.drawRoundedRectangle (panel.reduced (0.5f), 12.0f, 0.60f);   // ~25% thinner
                 };
 
                 const auto laneLF  = juce::Rectangle<float> (x0,                             y1, laneW, y2 - y1);
@@ -432,19 +433,42 @@ namespace
                 const auto laneHMF = juce::Rectangle<float> (x0 + 2.0f * laneW + 2*dividerW, y1, laneW, y2 - y1);
                 const auto laneHF  = juce::Rectangle<float> (x0 + 3.0f * laneW + 3*dividerW, y1, laneW, y2 - y1);
 
-                // Restored band personality: deep blue → purple → olive green → warm red
+                // Max vibrancy palette (modern/digital energy)
                 drawBandPanel (laneLF,
-                               juce::Colour (0xFF1C4FB8).withAlpha (0.28f),
-                               juce::Colour (0xFF102A64).withAlpha (0.18f));
+                               juce::Colour (0xFF0088FF).withAlpha (0.36f),
+                               juce::Colour (0xFF003366).withAlpha (0.24f));
                 drawBandPanel (laneLMF,
-                               juce::Colour (0xFF6A2DBA).withAlpha (0.24f),
-                               juce::Colour (0xFF2D134F).withAlpha (0.16f));
+                               juce::Colour (0xFFAA33FF).withAlpha (0.34f),
+                               juce::Colour (0xFF4A146E).withAlpha (0.24f));
                 drawBandPanel (laneHMF,
-                               juce::Colour (0xFF5E7A3A).withAlpha (0.22f),
-                               juce::Colour (0xFF2F3F20).withAlpha (0.14f));
+                               juce::Colour (0xFF88FF88).withAlpha (0.32f),
+                               juce::Colour (0xFF2B6B2B).withAlpha (0.22f));
                 drawBandPanel (laneHF,
-                               juce::Colour (0xFFB5403A).withAlpha (0.30f),
-                               juce::Colour (0xFF4A1A18).withAlpha (0.18f));
+                               juce::Colour (0xFFFF4444).withAlpha (0.36f),
+                               juce::Colour (0xFF7A1E1E).withAlpha (0.24f));
+
+                // Subtle band-colored radial glow “energy” from band knob centers (under knobs)
+                auto glowAt = [&] (juce::Rectangle<int> knob, juce::Colour c)
+                {
+                    if (knob.isEmpty()) return;
+                    const auto kf = knob.toFloat();
+                    const auto centre = kf.getCentre();
+                    const float r2 = kf.getWidth() * 1.35f;
+
+                    juce::ColourGradient glow (c.withAlpha (0.10f), centre.x, centre.y,
+                                               c.withAlpha (0.00f), centre.x + r2, centre.y,
+                                               true /* radial */);
+                    glow.addColour (0.0,  c.withAlpha (0.10f));
+                    glow.addColour (0.25, c.withAlpha (0.05f));
+                    glow.addColour (1.0,  c.withAlpha (0.00f));
+                    g.setGradientFill (glow);
+                    g.fillEllipse (juce::Rectangle<float> (centre.x - r2, centre.y - r2, r2 * 2.0f, r2 * 2.0f));
+                };
+
+                glowAt (lfFreqKnob,  juce::Colour (0xFF0088FF));
+                glowAt (lmfFreqKnob, juce::Colour (0xFFAA33FF));
+                glowAt (hmfFreqKnob, juce::Colour (0xFF88FF88));
+                glowAt (hfFreqKnob,  juce::Colour (0xFFFF4444));
 
                 // Etched dividers between bands (SSL strip separation)
                 g.setColour (juce::Colours::lightgrey.withAlpha (0.20f));
@@ -535,18 +559,50 @@ namespace
 
         if (well.isEmpty()) return;
 
-        // 1. Recessed fill — keep dark
-        g.setColour (gray8 (26));
-        g.fillRoundedRectangle (well, 12.0f);
-
-        // 1b. Light band tint wash (Option C): ties colour to the machined recess without flattening depth
+        // 1. Recessed fill — NO black centre panel under band knobs.
+        // If a tint is provided (band wells), fill directly with the band colour so it reads fully under the knobs.
         if (tint.getAlpha() > 0)
         {
-            juce::ColourGradient tg (tint.brighter (0.08f), well.getCentreX(), well.getY(),
-                                     tint.darker (0.10f),   well.getCentreX(), well.getBottom(),
+            const auto solid = tint.withAlpha (1.0f);
+            juce::ColourGradient tg (solid.brighter (0.06f), well.getCentreX(), well.getY(),
+                                     solid.darker (0.08f),   well.getCentreX(), well.getBottom(),
                                      false);
             g.setGradientFill (tg);
             g.fillRoundedRectangle (well, 12.0f);
+        }
+        else
+        {
+            // Neutral fallback (used only when called without a tint)
+            g.setColour (gray8 (26));
+            g.fillRoundedRectangle (well, 12.0f);
+        }
+
+        // 1c. Subtle “sparkle” particles (modern energy) — deterministic, no assets
+        if (tint.getAlpha() > 0)
+        {
+            juce::Graphics::ScopedSaveState ss (g);
+            juce::Path clip;
+            clip.addRoundedRectangle (well, 12.0f);
+            g.reduceClipRegion (clip);
+
+            const int seed = juce::roundToInt (well.getX() * 13.0f + well.getY() * 29.0f + well.getWidth() * 7.0f);
+            juce::Random rnd ((int64_t) (0xC00L ^ (uint32_t) seed));
+
+            const float px = juce::jmax (1.0f, 1.0f / physicalScale);
+            const int sparkleCount = 22;
+
+            for (int i = 0; i < sparkleCount; ++i)
+            {
+                const float x = well.getX() + rnd.nextFloat() * well.getWidth();
+                const float y = well.getY() + rnd.nextFloat() * well.getHeight();
+                const float s = (0.6f + rnd.nextFloat() * 1.4f) * px;
+
+                // Mostly white specks, occasional tinted particle
+                const bool tinted = (rnd.nextFloat() < 0.18f);
+                const auto col = tinted ? tint.withAlpha (0.10f) : juce::Colours::white.withAlpha (0.06f);
+                g.setColour (col);
+                g.fillEllipse (x, y, s, s);
+            }
         }
 
         // 2. Rim stroke — 1px very dark (exact #111)
@@ -579,7 +635,7 @@ namespace
 
     struct WavesSSLKnobCache
     {
-        static juce::Image render (int sizePx, juce::Colour bandColour)
+        static juce::Image render (int sizePx, juce::Colour bandColour, float ringThicknessMul)
         {
             juce::Image img (juce::Image::ARGB, sizePx, sizePx, true);
             juce::Graphics gg (img);
@@ -607,29 +663,43 @@ namespace
                 gg.fillEllipse (bounds);
             }
 
-            // 2) Band accent ring + neutral body (band knobs only; filters/trim stay neutral via bandColour input)
+            // 2) Sleek metallic body + strong band accent ring (modern premium)
             auto knobBounds = bounds.reduced (juce::jmax (6.0f, radius * 0.18f));
             {
-                const auto ringBounds = knobBounds.reduced (3.0f);
+                const auto ringBounds = knobBounds.reduced (2.0f);
                 const auto bodyBounds = knobBounds.reduced (6.0f);
 
-                // Thin colored ring (accent)
-                if (! ringBounds.isEmpty() && bandColour.getAlpha() > 0)
-                {
-                    const auto ringBase = bandColour.withMultipliedSaturation (0.65f).brighter (0.10f);
-                    gg.setColour (ringBase);
-                    gg.fillEllipse (ringBounds);
-                }
-
-                // Neutral body (matte hardware)
+                // Metallic body (radial chrome-ish sheen)
                 if (! bodyBounds.isEmpty())
                 {
-                    const auto bodyBase = gray8 (34);
-                    juce::ColourGradient bodyGrad (bodyBase.brighter (0.10f), cx, cy - radius * 0.45f,
-                                                   bodyBase.darker (0.18f),  cx, cy + radius * 0.35f,
-                                                   false);
-                    gg.setGradientFill (bodyGrad);
+                    const auto centre = bodyBounds.getCentre();
+                    juce::ColourGradient metal (juce::Colour (0xFF141414), centre.x, centre.y,
+                                                juce::Colour (0xFF3C3C3C), centre.x, centre.y - radius * 0.65f,
+                                                true /* radial */);
+                    metal.addColour (0.0, juce::Colour (0xFF101010));
+                    metal.addColour (0.6, juce::Colour (0xFF2A2A2A));
+                    metal.addColour (1.0, juce::Colour (0xFF4A4A4A));
+                    gg.setGradientFill (metal);
                     gg.fillEllipse (bodyBounds);
+
+                    // Rim catch-light on body edge (top-left)
+                    juce::ColourGradient edgeHi (juce::Colours::white.withAlpha (0.10f), cx - radius * 0.25f, cy - radius * 0.35f,
+                                                 juce::Colours::transparentWhite,        cx,                 cy + radius * 0.45f,
+                                                 false);
+                    gg.setGradientFill (edgeHi);
+                    gg.drawEllipse (bodyBounds, juce::jmax (1.0f, radius * 0.05f));
+                }
+
+                // Band accent ring (band ID)
+                if (! ringBounds.isEmpty() && bandColour.getAlpha() > 0)
+                {
+                    const auto ringBase = bandColour.withMultipliedSaturation (1.0f).brighter (0.18f);
+                    juce::ColourGradient ringGrad (ringBase.brighter (0.12f), cx, cy - radius * 0.35f,
+                                                   ringBase.darker (0.12f),  cx, cy + radius * 0.35f,
+                                                   false);
+                    gg.setGradientFill (ringGrad);
+                    const float baseW = juce::jmax (2.0f, radius * 0.08f);
+                    gg.drawEllipse (ringBounds, baseW * ringThicknessMul);
                 }
             }
 
@@ -661,19 +731,23 @@ namespace
             return img;
         }
 
-        static const juce::Image& get (int sizePx, juce::Colour bandColour)
+        static const juce::Image& get (int sizePx, juce::Colour bandColour, float ringThicknessMul)
         {
-            static std::map<std::pair<int, uint32_t>, juce::Image> cache;
-            const auto key = std::make_pair (sizePx, (uint32_t) bandColour.getARGB());
+            using Key = std::tuple<int, uint32_t, int>;
+            static std::map<Key, juce::Image> cache;
+
+            const int ringKey = juce::roundToInt (ringThicknessMul * 1000.0f);
+            const auto key = Key { sizePx, (uint32_t) bandColour.getARGB(), ringKey };
             auto it = cache.find (key);
             if (it != cache.end())
                 return it->second;
-            cache[key] = render (sizePx, bandColour);
+
+            cache[key] = render (sizePx, bandColour, ringThicknessMul);
             return cache[key];
         }
     };
 
-    static void drawSSLKnob (juce::Graphics& g, juce::Rectangle<float> b, float value01, float scaleKey, juce::Colour bandColour)
+    static void drawSSLKnob (juce::Graphics& g, juce::Rectangle<float> b, float value01, float scaleKey, juce::Colour bandColour, float ringThicknessMul = 1.0f)
     {
         if (b.isEmpty())
             return;
@@ -682,12 +756,17 @@ namespace
         const float size = juce::jmin (b.getWidth(), b.getHeight());
         const int sizePx = juce::jlimit (24, 512, juce::roundToInt (size * physicalScale));
 
-        const auto& base = WavesSSLKnobCache::get (sizePx, bandColour);
+        const auto& base = WavesSSLKnobCache::get (sizePx, bandColour, ringThicknessMul);
         auto dst = juce::Rectangle<float> (b.getCentreX() - size * 0.5f,
                                            b.getCentreY() - size * 0.5f,
                                            size, size);
 
+        // Keep knob bitmap scaling clean (avoid resampling artifacts that can read as a dark centre strip)
+        // Note: this JUCE version doesn't expose getImageResamplingQuality(), so we set explicitly.
+        g.setImageResamplingQuality (juce::Graphics::mediumResamplingQuality);
         g.drawImage (base, dst, juce::RectanglePlacement::stretchToFit);
+        // Restore for crisp vector pointer (caller also restores after the knob draw).
+        g.setImageResamplingQuality (juce::Graphics::lowResamplingQuality);
 
         // Pointer / indicator line (classic SSL: white line pointer)
         const float v = juce::jlimit (0.0f, 1.0f, value01);
@@ -699,12 +778,22 @@ namespace
         const auto p1 = juce::Point<float> (c.x + std::cos (angleRad) * len,
                                             c.y + std::sin (angleRad) * len);
 
-        // Pointer / indicator (bright, crisp, scale-aware). Draw a dark under-stroke for depth.
+        // Pointer / indicator: pure white, unobstructed. Keep any “depth” extremely subtle to avoid dark banding.
         const float w = juce::jmax (1.6f, 1.6f * scaleKey);
-        g.setColour (juce::Colours::black.withAlpha (0.35f));
-        g.drawLine (c.x, c.y, p1.x, p1.y, w + 0.5f);
+        juce::Path pointer;
+        pointer.startNewSubPath (c);
+        pointer.lineTo (p1);
+
+        // Faint band-coloured glow on the pointer (modern energy; subtle)
+        if (bandColour.getAlpha() > 0)
+        {
+            g.setColour (bandColour.withAlpha (0.12f));
+            g.strokePath (pointer, juce::PathStrokeType (w + 1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
+
+        // Final crisp indicator
         g.setColour (juce::Colours::white.withAlpha (0.98f));
-        g.drawLine (c.x, c.y, p1.x, p1.y, w);
+        g.strokePath (pointer, juce::PathStrokeType (w, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
         // Center hub / insert
         if (bandColour.getAlpha() > 0)
@@ -813,7 +902,10 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider (
 
     // Crisp indicators: request low-resampling before knob draw (affects image draw + subsequent line)
     g.setImageResamplingQuality (juce::Graphics::lowResamplingQuality);
-    drawSSLKnob (g, bounds, sliderPos, scaleKey, bandColour);
+    // Pass 1: establish hierarchy — FREQ knob ring slightly thicker (band knobs only; gain/Q unchanged)
+    const bool isBandFreq = (bandColour.getAlpha() > 0 && nm.containsIgnoreCase ("frequency"));
+    const float ringThicknessMul = isBandFreq ? 1.12f : 1.0f; // ~12% thicker
+    drawSSLKnob (g, bounds, sliderPos, scaleKey, bandColour, ringThicknessMul);
 
     // Tight contact shadow (single, post-image; avoids cached DPI artifacts)
     {
@@ -1088,21 +1180,51 @@ void CompassEQAudioProcessorEditor::renderStaticLayer (juce::Graphics& g, float 
 
     // Phase 1 depth model: rectangular recessed band wells (replace per-knob circular wells)
     {
-        // Option C: lightly tint the recesses (≈30–50% of lane intensity), while preserving depth cues
-        auto wellTint = [] (juce::Colour c) -> juce::Colour
+        // IMPORTANT: draw wells using the FULL band lane rectangles, not the knob-union columns.
+        // Using assetSlots.col* creates a narrow vertical "panel" behind the knobs that can read as a strip.
+
+        // Recompute the same lane geometry used in drawFaceplateStage3ZonedNoSeams()
+        const auto bandsRect = assetSlots.bandsZone.getIntersection (editor);
+        if (! bandsRect.isEmpty())
         {
-            return c.withMultipliedSaturation (0.55f).withAlpha (0.10f);
-        };
+            constexpr float meterGap = 10.0f;
+            constexpr float dividerW = 1.0f;
 
-        const auto tintLF  = wellTint (juce::Colour (0xFF1C4FB8)); // deep blue
-        const auto tintLMF = wellTint (juce::Colour (0xFF6A2DBA)); // purple
-        const auto tintHMF = wellTint (juce::Colour (0xFF5E7A3A)); // olive
-        const auto tintHF  = wellTint (juce::Colour (0xFFB5403A)); // warm red
+            const float bandsSpanLeft  = (float) inputMeter.getBounds().getRight() + meterGap;
+            const float bandsSpanRight = (float) outputMeter.getBounds().getX() - meterGap;
+            const float bandsSpanW = bandsSpanRight - bandsSpanLeft;
 
-        drawBandWell (g, assetSlots.colLF,  physicalScale, tintLF);
-        drawBandWell (g, assetSlots.colLMF, physicalScale, tintLMF);
-        drawBandWell (g, assetSlots.colHMF, physicalScale, tintHMF);
-        drawBandWell (g, assetSlots.colHF,  physicalScale, tintHF);
+            const float laneW = (bandsSpanW - 3.0f * dividerW) / 4.0f;
+            const float x0 = bandsSpanLeft;
+
+            // Must match drawFaceplateStage3ZonedNoSeams()
+            constexpr float kLaneTopExtra = 24.0f;
+            const int yTopKHz = juce::jmin (lfFreq.getY(), lmfFreq.getY(),
+                                           hmfFreq.getY(), hfFreq.getY());
+            const float y1 = (float) yTopKHz - kLaneTopExtra;
+            const float y2 = (float) bandsRect.getBottom() + 12.0f;
+
+            const auto laneLF  = juce::Rectangle<float> (x0,                             y1, laneW, y2 - y1);
+            const auto laneLMF = juce::Rectangle<float> (x0 + laneW + dividerW,          y1, laneW, y2 - y1);
+            const auto laneHMF = juce::Rectangle<float> (x0 + 2.0f * laneW + 2*dividerW, y1, laneW, y2 - y1);
+            const auto laneHF  = juce::Rectangle<float> (x0 + 3.0f * laneW + 3*dividerW, y1, laneW, y2 - y1);
+
+            auto wellTint = [] (juce::Colour c) -> juce::Colour
+            {
+                // ~60–70% of lane strength, but still subtle inside the recess
+                return c.withMultipliedSaturation (0.70f).withAlpha (0.16f);
+            };
+
+            const auto tintLF  = wellTint (juce::Colour (0xFF004488)); // deep blue
+            const auto tintLMF = wellTint (juce::Colour (0xFF5E3388)); // vivid purple
+            const auto tintHMF = wellTint (juce::Colour (0xFF669966)); // punchy olive/green
+            const auto tintHF  = wellTint (juce::Colour (0xFFAA4444)); // warm red
+
+            drawBandWell (g, laneLF.getSmallestIntegerContainer(),  physicalScale, tintLF);
+            drawBandWell (g, laneLMF.getSmallestIntegerContainer(), physicalScale, tintLMF);
+            drawBandWell (g, laneHMF.getSmallestIntegerContainer(), physicalScale, tintHMF);
+            drawBandWell (g, laneHF.getSmallestIntegerContainer(),  physicalScale, tintHF);
+        }
     }
 
     // ---- Keep your existing Phase 3.3 text system (headers/legends/ticks) ----
