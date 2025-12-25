@@ -890,11 +890,25 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider (
     else if (nm.startsWith ("HF"))
         bandColour = capColourForHue (UIStyle::Colors::bandHueHF);
 
-    // Hover ring (kept)
-    if (s.isMouseOverOrDragging())
+    // Pass 4: software-native delight — subtle band-coloured rim glow on hover/focus only.
+    // Must not change idle look, and must apply ONLY to the 3 knobs per band (Freq/Gain/Q).
+    const bool isBandKnob = (bandColour.getAlpha() > 0);
+    const bool isBandPrimaryKnob =
+        isBandKnob
+        && (nm.containsIgnoreCase ("frequency") || nm.containsIgnoreCase ("gain") || nm.containsIgnoreCase ("q"));
+
+    const bool isHot = (s.isMouseOverOrDragging() || s.hasKeyboardFocus (true));
+
+    if (isBandPrimaryKnob && isHot)
     {
-        g.setColour (juce::Colours::white.withAlpha (0.12f));
-        g.drawEllipse (bounds.expanded (6.0f), 2.0f);
+        // 2-ring fake blur: inner a bit stronger, outer softer. Keep within 2–4 px outside radius.
+        const auto glowCol = bandColour.withAlpha (1.0f);
+
+        g.setColour (glowCol.withAlpha (0.18f));                 // within 0.12–0.22 target
+        g.drawEllipse (bounds.expanded (2.0f), 2.0f);
+
+        g.setColour (glowCol.withAlpha (0.12f));
+        g.drawEllipse (bounds.expanded (3.0f), 2.0f);
     }
 
     gRotaryStartAngleRad = rotaryStartAngle;
