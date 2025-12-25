@@ -904,11 +904,13 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider (
         // 2-ring fake blur: inner a bit stronger, outer softer. Keep within 2–4 px outside radius.
         const auto glowCol = bandColour.withAlpha (1.0f);
 
-        g.setColour (glowCol.withAlpha (0.18f));                 // within 0.12–0.22 target
-        g.drawEllipse (bounds.expanded (2.0f), 2.0f);
+        // Pass 4.1: reduce intensity + thin stroke + slightly softer falloff (premium, "felt not seen")
+        g.setColour (glowCol.withAlpha (0.16f));                 // max alpha within 0.15–0.18
+        g.drawEllipse (bounds.expanded (2.0f), 1.4f);            // ~30% thinner than 2.0f
 
-        g.setColour (glowCol.withAlpha (0.12f));
-        g.drawEllipse (bounds.expanded (3.0f), 2.0f);
+        // Outer ring does most of the feather at very low opacity
+        g.setColour (glowCol.withAlpha (0.08f));
+        g.drawEllipse (bounds.expanded (3.6f), 1.1f);
     }
 
     gRotaryStartAngleRad = rotaryStartAngle;
