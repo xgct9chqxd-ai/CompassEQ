@@ -300,7 +300,7 @@ namespace
             if (cosmicHazeImage.isValid())
             {
                 juce::Graphics::ScopedSaveState ss(g);
-                g.setOpacity(0.20f); // 0.10–0.15
+                g.setOpacity(0.30f); // 0.10–0.15
                 g.drawImageWithin(cosmicHazeImage,
                                   editor.getX(), editor.getY(),
                                   editor.getWidth(), editor.getHeight(),
@@ -799,10 +799,10 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider(
         bandColour = capColourForHue(UIStyle::Colors::bandHueHF);
     else if (nm.containsIgnoreCase("HPF") || nm.containsIgnoreCase("LPF") ||
              nm.containsIgnoreCase("Input Trim") || nm.containsIgnoreCase("Output Trim"))
-    {
-        // Dedicated premium black style — dark, sleek, consistent with colored bands
-        bandColour = juce::Colour(0xFF1C1C1C); // Deep charcoal for body/ring
-    }
+{
+    // Dedicated premium black style — dark, sleek, consistent with colored bands
+    bandColour = juce::Colour(0xFF1C1C1C); // Deep charcoal for body/ring
+}
     // Pass 4: software-native delight — subtle band-coloured rim glow on hover/focus only.
     // Must not change idle look, and must apply ONLY to the 3 knobs per band (Freq/Gain/Q).
     const bool isBandKnob = (bandColour.getAlpha() > 0);
@@ -1225,66 +1225,6 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
         drawEngravedFitted(txt, columnBounds.getX(), (int)snappedY, columnBounds.getWidth(), 14,
                            juce::Justification::centred, 1, kSectionA, juce::Colours::white);
     };
-    // Title (top-left; smaller; engraved) — geometry is fixed relative to editor
-    {
-        // Align left edge with LF column (marginL = 24, so start at 24)
-        const int titleLeftX = 24; // matches left margin / LF band start
-        // Vertical: ~28px down from top for breathing room
-        const int titleTopY = 28;
-        // We'll make it taller for the larger font (we'll compute proper height later)
-        auto titleRect = juce::Rectangle<int>(titleLeftX, titleTopY, 400, 70); // wider/taller placeholder
-        const float snappedY = UIStyle::Snap::snapPx((float)titleRect.getY(), physicalScale);
-        titleRect.setY((int)snappedY);
-        // === TITLE: Panel silkscreen mode — flat ink, zero bevel/engrave, no gradients ===
-        // Base fallback (cross-platform safe)
-        juce::Font labelFont("Arial Black", 38.0f, juce::Font::bold);
-#if JUCE_MAC
-        {
-            const auto faces = juce::Font::findAllTypefaceNames();
-            // Prefer a true condensed bold face if available
-            if (faces.contains("Helvetica Neue Condensed Bold"))
-            {
-                labelFont = juce::Font("Helvetica Neue Condensed Bold", 38.0f, juce::Font::bold);
-            }
-            else if (faces.contains("Helvetica Neue"))
-            {
-                juce::Font candidate("Helvetica Neue", 38.0f, juce::Font::bold);
-                candidate = candidate.withTypefaceStyle("Condensed Bold");
-                if (candidate.getTypefaceStyle().containsIgnoreCase("condensed"))
-                    labelFont = candidate;
-            }
-        }
-#endif
-        // Silkscreen typography tuning (tight, printed, not “designed”)
-        labelFont = labelFont
-                        .withExtraKerningFactor(0.012f) // tighter tracking than “hardware mode”
-                        .boldened();
-        g.setFont(labelFont);
-        // Title text (uppercase equipment labeling)
-        const juce::String titleText = "COMPASS EQ";
-        // Single-pass ink (no shadow, no bevel, no gradient)
-        g.setColour(juce::Colour(0xFFF2F2F2)); // slightly warm off-white (reads like ink)
-        g.drawFittedText(titleText,
-                         titleRect.getX(),
-                         titleRect.getY(),
-                         titleRect.getWidth(),
-                         titleRect.getHeight(),
-                         juce::Justification::centredLeft,
-                         1);
-        // 2) Main text with white → light cyan vertical gradient
-        juce::ColourGradient textGrad(
-            juce::Colours::white,
-            (float)titleRect.getCentreX(), (float)titleRect.getY(),
-            juce::Colour(0xFFCCFFFF), // very light cyan
-            (float)titleRect.getCentreX(), (float)titleRect.getBottom(),
-            false);
-        g.setGradientFill(textGrad);
-        g.drawFittedText(titleText,
-                         titleRect.getX(), titleRect.getY(),
-                         titleRect.getWidth(), titleRect.getHeight(),
-                         juce::Justification::centredLeft, 1);
-    }
-    // Column labels: sit right above the colored lanes (derived from the top of the KHz knobs + lane-top extra)
     constexpr int kBandLabelGap = 2;  // px gap between label box and lane top (slightly lower)
     constexpr int kBandLabelH = 14;   // drawColLabel uses a 14px-high box
     constexpr int kLaneTopExtra = 18; // must match drawFaceplateStage3ZonedNoSeams()
