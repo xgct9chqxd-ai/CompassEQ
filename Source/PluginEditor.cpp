@@ -1313,7 +1313,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
         const float range = endRad - startRad;
         auto drawScaleMarkings = [&g, physicalScale, drawEngravedFitted, &microFont, kPrimaryA, startRad, range](juce::Rectangle<int> knobBounds,
                                                                                                                  const char *const *numbers,
-                                                                                                                 int numberCount)
+                                                                                                                 int numberCount, bool isFilter = false)
         {
             if (knobBounds.isEmpty())
                 return;
@@ -1338,7 +1338,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
             if (numbers == nullptr || numberCount < 2)
                 return;
             // Primary scale text: regular, slightly larger, slightly tightened tracking
-            g.setFont(microFont.withHeight(10.0f).withExtraKerningFactor(-0.03f));
+            g.setFont(microFont.withHeight(isFilter ? 11.5f : 10.0f).withExtraKerningFactor(isFilter ? -0.02f : -0.03f));
             const float px1 = 1.0f / juce::jmax(1.0f, physicalScale);
             for (int i = 0; i < numberCount; ++i)
             {
@@ -1352,9 +1352,10 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
                 const int yi = (int)std::lround(UIStyle::Snap::snapPx(y - (float)(h / 2), physicalScale));
                 drawEngravedFitted(numbers[i], xi, yi, w, h,
                                    juce::Justification::centred, 1,
-                                   kPrimaryA, juce::Colours::white.withAlpha(0.95f));
+                                   (isFilter ? 0.86f : kPrimaryA),
+                                   (isFilter ? juce::Colour(0xFFF0F0F0) : juce::Colours::white));
                 // Scale numbers: subtle bottom ink pass for printed depth
-                g.setColour(juce::Colours::black.withAlpha(0.10f));
+                g.setColour(juce::Colours::black.withAlpha(isFilter ? 0.16f : 0.10f));
                 g.drawFittedText(numbers[i],
                                  xi,
                                  (int)std::lround((float)yi + 1.0f * px1),
@@ -1387,8 +1388,8 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
         // Filters (frequency)
         static const char *const kFreqHPF[] = {"20", "300", "500", "750", "1k"};
         static const char *const kFreqLPF[] = {"3k", "7k", "11k", "15k", "20k"};
-        drawScaleMarkings(hpfFreq.getBounds(), kFreqHPF, (int)(sizeof(kFreqHPF) / sizeof(kFreqHPF[0])));
-        drawScaleMarkings(lpfFreq.getBounds(), kFreqLPF, (int)(sizeof(kFreqLPF) / sizeof(kFreqLPF[0])));
+        drawScaleMarkings(hpfFreq.getBounds(), kFreqHPF, (int)(sizeof(kFreqHPF) / sizeof(kFreqHPF[0])), true);
+        drawScaleMarkings(lpfFreq.getBounds(), kFreqLPF, (int)(sizeof(kFreqLPF) / sizeof(kFreqLPF[0])), true);
     }
     // Ticks
     drawTick(lfFreq.getBounds(), -2);
