@@ -1469,6 +1469,16 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
                 const int h = 14;
                 const int xi = (int)std::lround(UIStyle::Snap::snapPx(x - (float)(w / 2), physicalScale));
                 const int yi = (int)std::lround(UIStyle::Snap::snapPx(y - (float)(h / 2), physicalScale));
+                // Subtle shadow behind numbers (ALL knobs). Dark-only; no extra brightness.
+                // Uses snapped 1px offset (px1) so it stays consistent across scale factors.
+                g.setColour(juce::Colours::black.withAlpha(isFilter ? 0.18f : 0.14f));
+                g.drawFittedText(numbers[i],
+                                 xi,
+                                 (int)std::lround((float)yi + 1.0f * px1),
+                                 w, h,
+                                 juce::Justification::centred,
+                                 1);
+
                 if (isFilter)
                 {
                     // Subtle halo for readability on nebula/cosmic background (tiny, not 'glowy UI')
@@ -1483,7 +1493,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
                                    (isFilter ? 0.94f : kPrimaryA),
                                    (isFilter ? juce::Colour(0xFFF4F4F4) : juce::Colours::white));
                 // Scale numbers: subtle bottom ink pass for printed depth
-                g.setColour(juce::Colours::black.withAlpha(isFilter ? 0.16f : 0.10f));
+                g.setColour(juce::Colours::black.withAlpha(isFilter ? 0.26f : 0.20f));
                 g.drawFittedText(numbers[i],
                                  xi,
                                  (int)std::lround((float)yi + 1.0f * px1),
