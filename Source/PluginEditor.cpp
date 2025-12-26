@@ -436,10 +436,16 @@ namespace
                 glowAt(hmfFreqKnob, juce::Colour(0xFF88FF88));
                 glowAt(hfFreqKnob, juce::Colour(0xFFFF4444));
                 // Etched dividers between bands (SSL strip separation)
-                g.setColour(juce::Colours::black.withAlpha(0.28f));
-                g.drawLine(xDiv1, y1, xDiv1, y2, 1.3f);
-                g.drawLine(xDiv2, y1, xDiv2, y2, 1.3f);
-                g.drawLine(xDiv3, y1, xDiv3, y2, 1.3f);
+                const float divPx = 1.0f / juce::jmax(1.0f, physicalScale);
+                // Etch pass: shadow then highlight (offset by 1 physical px)
+                g.setColour(juce::Colours::black.withAlpha(0.34f));
+                g.drawLine(xDiv1, y1, xDiv1, y2, 1.0f);
+                g.drawLine(xDiv2, y1, xDiv2, y2, 1.0f);
+                g.drawLine(xDiv3, y1, xDiv3, y2, 1.0f);
+                g.setColour(juce::Colours::white.withAlpha(0.08f));
+                g.drawLine(xDiv1 + divPx, y1, xDiv1 + divPx, y2, 1.0f);
+                g.drawLine(xDiv2 + divPx, y1, xDiv2 + divPx, y2, 1.0f);
+                g.drawLine(xDiv3 + divPx, y1, xDiv3 + divPx, y2, 1.0f);
             }
         }
         // Stage 5.5 lock: no alpha overlays that re-lighten the neutral black base afterward.
