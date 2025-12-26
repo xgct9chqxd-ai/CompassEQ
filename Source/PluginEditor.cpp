@@ -797,12 +797,22 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider(
         bandColour = capColourForHue(UIStyle::Colors::bandHueHMF);
     else if (nm.startsWith("HF"))
         bandColour = capColourForHue(UIStyle::Colors::bandHueHF);
-    else if (nm.containsIgnoreCase("HPF") || nm.containsIgnoreCase("LPF") ||
-             nm.containsIgnoreCase("Input Trim") || nm.containsIgnoreCase("Output Trim"))
-{
-    // Dedicated premium black style — dark, sleek, consistent with colored bands
-    bandColour = juce::Colour(0xFF1C1C1C); // Deep charcoal for body/ring
-}
+    // Filters: bookend the spectrum using the same hue family as LF/HF
+    else if (nm.containsIgnoreCase("HPF"))
+    {
+        // HPF affects LOWS → match LF blue family
+        bandColour = capColourForHue(UIStyle::Colors::bandHueLF);
+    }
+    else if (nm.containsIgnoreCase("LPF"))
+    {
+        // LPF affects HIGHS → match HF red family
+        bandColour = capColourForHue(UIStyle::Colors::bandHueHF);
+    }
+    else if (nm.containsIgnoreCase("Input Trim") || nm.containsIgnoreCase("Output Trim"))
+    {
+        // Dedicated premium black style — dark, sleek, consistent with colored bands
+        bandColour = juce::Colour(0xFF1C1C1C); // Deep charcoal for body/ring
+    }
     // Pass 4: software-native delight — subtle band-coloured rim glow on hover/focus only.
     // Must not change idle look, and must apply ONLY to the 3 knobs per band (Freq/Gain/Q).
     const bool isBandKnob = (bandColour.getAlpha() > 0);
@@ -1652,7 +1662,7 @@ void CompassEQAudioProcessorEditor::resized()
     }
     // ----- Zone 2: Filters (HPF/LPF) -----
     const int filterKnob = 48;
-    const int filterSpacing = 80;
+    const int filterSpacing = 104;
     const int filtersTotalW = filterKnob + filterSpacing + filterKnob;   // 128
     const int filtersStartX = marginL + ((usableW - filtersTotalW) / 2); // 316
     // Stage 5.4b (LOCKED): place HPF/LPF knob centers using topZoneRect:
