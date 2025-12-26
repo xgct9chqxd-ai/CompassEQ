@@ -1317,7 +1317,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
     };
     // Pass 3 (redo): explicit, screenshot-obvious hierarchy
     const float kSectionA = 1.00f; // section anchors (LF/LMF/HMF/HF, HPF/LPF, IN/OUT)
-    const float kPrimaryA = 0.90f; // primary scale text (numbers around knobs)
+    const float kPrimaryA = 0.96f; // primary scale text (numbers around knobs)
     const float kLegendA = 0.78f;  // secondary markings (KHz/GR/Q legends)
     auto drawHeaderAbove = [&g, &headerFont, kSectionA, physicalScale, drawEngravedFitted](const char *txt, juce::Rectangle<int> b, int yOffset)
     {
@@ -1498,7 +1498,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
         static const char *const kFreqHMF[] = {"600", "4k", "8k", "11k", "15k"};    // 600–15k Hz
         static const char *const kFreqHF[] = {"1.5k", "6.5k", "12k", "17k", "22k"}; // 1.5–22k Hz
         static const char *const kGain[] = {"-18", "-12", "-6", "0", "+6", "+12", "+18"};
-        static const char *const kQ[] = {"0.5", "1", "2", "4", "8"};
+        static const char *const kQ[] = { "0.5", "0.8", "1.3", "1.7", "2" };
         // LF
         drawScaleMarkings(lfFreq.getBounds(), kFreqLF, (int)(sizeof(kFreqLF) / sizeof(kFreqLF[0])));
         drawScaleMarkings(lfGain.getBounds(), kGain, (int)(sizeof(kGain) / sizeof(kGain[0])));
