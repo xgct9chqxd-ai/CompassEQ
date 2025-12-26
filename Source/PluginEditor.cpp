@@ -796,7 +796,7 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider(
     else if (nm.startsWith("HMF"))
         bandColour = capColourForHue(UIStyle::Colors::bandHueHMF);
     else if (nm.startsWith("HF"))
-        bandColour = capColourForHue(UIStyle::Colors::bandHueHF);
+        bandColour = capColourForHue(UIStyle::Colors::bandHueHF).darker(0.14f).withMultipliedSaturation(0.86f);
     // Filters: bookend the spectrum using the same hue family as LF/HF
     else if (nm.containsIgnoreCase("HPF"))
     {
@@ -806,7 +806,7 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider(
     else if (nm.containsIgnoreCase("LPF"))
     {
         // LPF affects HIGHS → match HF red family
-        bandColour = capColourForHue(UIStyle::Colors::bandHueHF);
+        bandColour = capColourForHue(UIStyle::Colors::bandHueHF).withRotatedHue(-0.015f).darker(0.18f).withMultipliedSaturation(0.80f);
     }
     else if (nm.containsIgnoreCase("Input Trim") || nm.containsIgnoreCase("Output Trim"))
     {
