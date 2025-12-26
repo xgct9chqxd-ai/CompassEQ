@@ -796,30 +796,12 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider(
     else if (nm.startsWith("HMF"))
         bandColour = capColourForHue(UIStyle::Colors::bandHueHMF);
     else if (nm.startsWith("HF"))
-        bandColour = capColourForHue(UIStyle::Colors::bandHueHF).darker(0.14f).withMultipliedSaturation(0.86f);
-    // Filters: bookend the spectrum using the same hue family as LF/HF
-    else if (nm.containsIgnoreCase("HPF"))
+        bandColour = capColourForHue(UIStyle::Colors::bandHueHF);
+    else if (nm.containsIgnoreCase("HPF") || nm.containsIgnoreCase("LPF") ||
+             nm.containsIgnoreCase("Input Trim") || nm.containsIgnoreCase("Output Trim"))
     {
-        // HPF affects LOWS → match LF blue family
-        bandColour = capColourForHue(UIStyle::Colors::bandHueLF);
-    }
-    else if (nm.containsIgnoreCase("LPF"))
-    {
-        // LPF affects HIGHS → match HF red family
-        bandColour = capColourForHue(UIStyle::Colors::bandHueHF).withRotatedHue(-0.015f).darker(0.18f).withMultipliedSaturation(0.80f);
-    }
-    else if (nm.containsIgnoreCase("Input Trim"))
-    {
-        // Premium neutral with faint LF (blue) bias (keep subtle)
-        auto c = capColourForHue(UIStyle::Colors::bandHueLF);
-        bandColour = c.withMultipliedSaturation(0.38f).darker(0.22f);
-    }
-    else if (nm.containsIgnoreCase("Output Trim"))
-    {
-        // Premium neutral with faint HF (warm/red) bias (keep subtle)
-        auto c = capColourForHue(UIStyle::Colors::bandHueHF);
-        c = c.withRotatedHue(-0.010f);
-        bandColour = c.withMultipliedSaturation(0.38f).darker(0.22f);
+        // Dedicated premium black style — dark, sleek, consistent with colored bands
+        bandColour = juce::Colour(0xFF1C1C1C); // Deep charcoal for body/ring
     }
     // Pass 4: software-native delight — subtle band-coloured rim glow on hover/focus only.
     // Must not change idle look, and must apply ONLY to the 3 knobs per band (Freq/Gain/Q).
@@ -1321,7 +1303,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
         const float range = endRad - startRad;
         auto drawScaleMarkings = [&g, physicalScale, drawEngravedFitted, &microFont, kPrimaryA, startRad, range](juce::Rectangle<int> knobBounds,
                                                                                                                  const char *const *numbers,
-                                                                                                                 int numberCount, bool isFilter = false)
+                                                                                                                 int numberCount)
         {
             if (knobBounds.isEmpty())
                 return;
@@ -1346,7 +1328,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
             if (numbers == nullptr || numberCount < 2)
                 return;
             // Primary scale text: regular, slightly larger, slightly tightened tracking
-            g.setFont(microFont.withHeight(isFilter ? 11.8f : 10.0f).withExtraKerningFactor(isFilter ? -0.015f : -0.03f));
+            g.setFont(microFont.withHeight(10.0f).withExtraKerningFactor(-0.03f));
             const float px1 = 1.0f / juce::jmax(1.0f, physicalScale);
             for (int i = 0; i < numberCount; ++i)
             {
@@ -1358,21 +1340,11 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
                 const int h = 14;
                 const int xi = (int)std::lround(UIStyle::Snap::snapPx(x - (float)(w / 2), physicalScale));
                 const int yi = (int)std::lround(UIStyle::Snap::snapPx(y - (float)(h / 2), physicalScale));
-                if (isFilter)
-                {
-                    // Subtle halo for readability on nebula/cosmic background (tiny, not 'glowy UI')
-                    g.setColour(juce::Colours::white.withAlpha(0.06f));
-                    g.drawFittedText(numbers[i], xi - 1, yi,     w, h, juce::Justification::centred, 1);
-                    g.drawFittedText(numbers[i], xi + 1, yi,     w, h, juce::Justification::centred, 1);
-                    g.drawFittedText(numbers[i], xi,     yi - 1, w, h, juce::Justification::centred, 1);
-                    g.drawFittedText(numbers[i], xi,     yi + 1, w, h, juce::Justification::centred, 1);
-                }
                 drawEngravedFitted(numbers[i], xi, yi, w, h,
                                    juce::Justification::centred, 1,
-                                   (isFilter ? 0.94f : kPrimaryA),
-                                   (isFilter ? juce::Colour(0xFFF4F4F4) : juce::Colours::white));
+                                   kPrimaryA, juce::Colours::white.withAlpha(0.95f));
                 // Scale numbers: subtle bottom ink pass for printed depth
-                g.setColour(juce::Colours::black.withAlpha(isFilter ? 0.16f : 0.10f));
+                g.setColour(juce::Colours::black.withAlpha(0.10f));
                 g.drawFittedText(numbers[i],
                                  xi,
                                  (int)std::lround((float)yi + 1.0f * px1),
@@ -1405,8 +1377,8 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
         // Filters (frequency)
         static const char *const kFreqHPF[] = {"20", "300", "500", "750", "1k"};
         static const char *const kFreqLPF[] = {"3k", "7k", "11k", "15k", "20k"};
-        drawScaleMarkings(hpfFreq.getBounds(), kFreqHPF, (int)(sizeof(kFreqHPF) / sizeof(kFreqHPF[0])), true);
-        drawScaleMarkings(lpfFreq.getBounds(), kFreqLPF, (int)(sizeof(kFreqLPF) / sizeof(kFreqLPF[0])), true);
+        drawScaleMarkings(hpfFreq.getBounds(), kFreqHPF, (int)(sizeof(kFreqHPF) / sizeof(kFreqHPF[0])));
+        drawScaleMarkings(lpfFreq.getBounds(), kFreqLPF, (int)(sizeof(kFreqLPF) / sizeof(kFreqLPF[0])));
     }
     // Ticks
     drawTick(lfFreq.getBounds(), -2);
@@ -1680,7 +1652,7 @@ void CompassEQAudioProcessorEditor::resized()
     }
     // ----- Zone 2: Filters (HPF/LPF) -----
     const int filterKnob = 48;
-    const int filterSpacing = 280;
+    const int filterSpacing = 80;
     const int filtersTotalW = filterKnob + filterSpacing + filterKnob;   // 128
     const int filtersStartX = marginL + ((usableW - filtersTotalW) / 2); // 316
     // Stage 5.4b (LOCKED): place HPF/LPF knob centers using topZoneRect:
