@@ -854,21 +854,117 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider(
     }
     gRotaryStartAngleRad = rotaryStartAngle;
     gRotaryEndAngleRad = rotaryEndAngle;
-    // Crisp indicators: request low-resampling before knob draw (affects image draw + subsequent line)
-    g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
-    // Pass 1: establish hierarchy — FREQ knob ring slightly thicker (band knobs only; gain/Q unchanged)
-    const bool isBandFreq = (bandColour.getAlpha() > 0 && nm.containsIgnoreCase("frequency"));
-    const float ringThicknessMul = isBandFreq ? 1.12f : 1.0f; // ~12% thicker
-    drawSSLKnob(g, bounds, sliderPos, scaleKey, bandColour, ringThicknessMul);
-    // Tight contact shadow (single, post-image; avoids cached DPI artifacts)
+    // ===== Neumorphic rotary knob (vector; no assets) =====
+    // Keep existing hover glow above (Pass 4). This block replaces the SSL-metal knob body.
+    {
+        const auto b = bounds;
+        const auto c = b.getCentre();
+        const float r = 0.5f * juce::jmin(b.getWidth(), b.getHeight());
+        if (r <= 1.0f)
+            return;
+
+        // Base: soft, dark, slightly raised disc (top-left light)
+        {
+            const float inset = juce::jmax(2.0f, r * 0.10f);
+            const auto disc = b.reduced(inset);
+            const float cx = disc.getCentreX();
+            const float cy = disc.getCentreY();
+
+            juce::ColourGradient baseGrad(
+                juce::Colour(0xFF2A2A2A), cx - r * 0.25f, cy - r * 0.25f,
+                juce::Colour(0xFF171717), cx + r * 0.35f, cy + r * 0.45f,
+                false);
+            baseGrad.addColour(0.55, juce::Colour(0xFF202020));
+            g.setGradientFill(baseGrad);
+            g.fillEllipse(disc);
+
+            // inner shadow ring (concave feel)
+            g.setColour(juce::Colours::black.withAlpha(0.24f));
+            g.drawEllipse(disc.reduced(1.2f), juce::jmax(1.0f, r * 0.05f));
+
+            // outer highlight ring (neumorphic lift)
+            g.setColour(juce::Colours::white.withAlpha(0.09f));
+            g.drawEllipse(disc.expanded(1.0f), juce::jmax(1.0f, r * 0.03f));
+        }
+
+        // Value arc: thick, band-coloured (faster read than a pointer)
+        {
+            const float v = juce::jlimit(0.0f, 1.0f, sliderPos);
+
+            // Visual-only sweep trim (separate from knob travel)
+            constexpr float startTrim = 0.0f;
+            constexpr float endTrim   = 0.0f;
+
+            const float visStartA = rotaryStartAngle + startTrim;
+            const float visEndA   = rotaryEndAngle   - endTrim;
+
+            const float startA = visStartA;
+            const float endA   = startA + v * (visEndA - startA);
+
+            const float arcR = r - juce::jmax(6.0f, r * 0.26f);
+            juce::Path arc;
+            arc.addCentredArc(c.x, c.y, arcR, arcR, 0.0f, startA, endA, true);
+
+            auto arcCol = (bandColour.getAlpha() > 0) ? bandColour : juce::Colour(0xFFBFBFBF);
+
+            // soft band-colour halo (subtle; improves mid-value readability)
+            g.setColour(arcCol.withAlpha(0.18f));
+            g.strokePath(arc, juce::PathStrokeType(juce::jmax(6.4f, r * 0.21f) + 3.2f,
+                                                  juce::PathStrokeType::curved,
+                                                  juce::PathStrokeType::rounded));
+
+            // under-stroke for contrast
+            g.setColour(juce::Colours::black.withAlpha(0.35f));
+            g.strokePath(arc, juce::PathStrokeType(juce::jmax(6.4f, r * 0.21f) + 1.6f,
+                                                  juce::PathStrokeType::curved,
+                                                  juce::PathStrokeType::rounded));
+
+            g.setColour(arcCol.withAlpha(0.95f));
+            g.strokePath(arc, juce::PathStrokeType(juce::jmax(6.4f, r * 0.21f),
+                                                  juce::PathStrokeType::curved,
+                                                  juce::PathStrokeType::rounded));
+
+            // brighter edge to prevent low values blending into the base
+            g.setColour(arcCol.brighter(0.25f).withAlpha(0.22f));
+            g.strokePath(arc, juce::PathStrokeType(juce::jmax(6.4f, r * 0.21f) + 0.9f,
+                                                  juce::PathStrokeType::curved,
+                                                  juce::PathStrokeType::rounded));
+        }
+
+        // Central grab notch (rotates with value)
+        {
+            const float v = juce::jlimit(0.0f, 1.0f, sliderPos);
+            // Use the SAME visual sweep as the arc above (JUCE rotary angle space: 0=12 o'clock, clockwise)
+            constexpr float startTrim = 0.0f;
+            constexpr float endTrim   = 0.0f;
+            const float visStartA = rotaryStartAngle + startTrim;
+            const float visEndA   = rotaryEndAngle   - endTrim;
+            const float a = visStartA + v * (visEndA - visStartA);
+            const float dotR = juce::jmax(2.2f, r * 0.10f);
+            const float notchR = r - juce::jmax(6.0f, r * 0.26f);
+
+            // Convert JUCE rotary angle -> screen XY:
+            // a=0 at 12 o'clock, increasing clockwise
+            const float nx = c.x + std::sin(a) * notchR;
+            const float ny = c.y - std::cos(a) * notchR;
+            juce::Rectangle<float> dot(nx - dotR, ny - dotR, dotR * 2.0f, dotR * 2.0f);
+
+            g.setColour(juce::Colours::black.withAlpha(0.30f));
+            g.fillEllipse(dot.translated(0.0f, 0.9f));
+            g.setColour(juce::Colour(0xFFD6D6D6).withAlpha(0.85f));
+            g.fillEllipse(dot);
+            g.setColour(juce::Colours::white.withAlpha(0.10f));
+            g.drawEllipse(dot, 1.0f);
+        }
+    }
+
+    // Tight contact shadow (single; preserves depth against plate)
     {
         juce::DropShadow contact(juce::Colours::black.withAlpha(0.22f), 2, {0, 2});
         juce::Path p;
         p.addEllipse(bounds.reduced(2.0f));
         contact.drawForPath(g, p);
     }
-    // Restore default-ish resampling quality for anything drawn after this
-    g.setImageResamplingQuality(juce::Graphics::mediumResamplingQuality);
 }
 CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor(CompassEQAudioProcessor &p)
     : juce::AudioProcessorEditor(&p), proc(p), apvts(proc.getAPVTS()), inputMeter(proc, true, *this), outputMeter(proc, false, *this), lookAndFeel(std::make_unique<CompassLookAndFeel>(*this)), valueReadout(*this)
@@ -1039,10 +1135,11 @@ void CompassEQAudioProcessorEditor::configureKnob(CompassSlider &s, const char *
 {
     s.setSliderStyle(juce::Slider::RotaryVerticalDrag);
     // Correct standard pro EQ arc: min ~8 o'clock, neutral 12 o'clock straight up, max ~4 o'clock
-    s.setRotaryParameters(juce::MathConstants<float>::pi * 1.5f - juce::MathConstants<float>::pi * 0.833f, // start ~225° (8 o'clock min)
-                          juce::MathConstants<float>::pi * 1.5f + juce::MathConstants<float>::pi * 0.833f, // end ~315° (4 o'clock max)
-                          true);
-    s.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        s.setRotaryParameters(
+        juce::MathConstants<float>::pi * (210.0f / 180.0f), // min ~7 o'clock
+        juce::MathConstants<float>::pi * (510.0f / 180.0f), // max ~5 o'clock (clockwise sweep)
+        true);
+s.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     s.setPopupDisplayEnabled(false, false, this);
 
     // Phase 6: Enable double-click reset to parameter default
