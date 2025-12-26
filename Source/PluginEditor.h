@@ -17,9 +17,15 @@ public:
     void resized() override;
 
 private:
+    
     void handleAsyncUpdate() override;
     void renderStaticLayer (juce::Graphics& g, float scaleKey, float physicalScale);
     void ensureBackgroundNoiseTile();
+
+    void ensureCosmicHaze();
+    juce::Image backgroundGrainTexture;
+
+    juce::Image cosmicHazeTexture;
     using APVTS = juce::AudioProcessorValueTreeState;
     using SliderAttachment = APVTS::SliderAttachment;
     using ButtonAttachment = APVTS::ButtonAttachment;
@@ -598,8 +604,7 @@ private:
     std::atomic<bool> staticCacheDirty { true };
     std::atomic<bool> staticCacheRebuildPending { false };
 
-    // ---------------- Pass 5: Background grain (cached; no per-frame randomness) ----------------
-    juce::Image backgroundNoiseTile;
+    // Pass 5: Background grain (cached; no per-frame randomness)
 
     // Phase 4: Teardown safety guard (UI thread only, no need for atomic)
     bool isTearingDown = false;
