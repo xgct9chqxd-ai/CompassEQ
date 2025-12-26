@@ -589,17 +589,17 @@ namespace
             const float radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) * 0.5f;
             const float cx = bounds.getCentreX();
             const float cy = bounds.getCentreY();
-            // 0) Drop shadow (keep for depth)
+            // 0) Drop shadow (stronger for better separation)
             {
                 juce::Path p;
                 p.addEllipse(bounds.reduced(2.0f));
-                const juce::DropShadow shadow(juce::Colours::black.withAlpha(0.40f), 6, {0, 3});
+                const juce::DropShadow shadow(juce::Colours::black.withAlpha(0.50f), 8, {0, 4});
                 shadow.drawForPath(gg, p);
             }
-            // 1) Outer chrome rim (keep neutral)
+            // 1) Outer chrome rim (higher contrast, more defined)
             {
-                juce::ColourGradient rimGrad(juce::Colours::whitesmoke, cx, cy - radius * 0.80f,
-                                             juce::Colours::darkgrey, cx, cy + radius * 0.80f,
+                juce::ColourGradient rimGrad(juce::Colours::white.withAlpha(0.85f), cx, cy - radius * 0.75f,
+                                             juce::Colours::black.withAlpha(0.60f), cx, cy + radius * 0.75f,
                                              false);
                 gg.setGradientFill(rimGrad);
                 gg.fillEllipse(bounds);
@@ -609,61 +609,61 @@ namespace
             {
                 const auto ringBounds = knobBounds.reduced(2.0f);
                 const auto bodyBounds = knobBounds.reduced(6.0f);
-                // Metallic body (radial chrome-ish sheen)
+                // Metallic body (radial satin sheen with stronger stops for contrast)
                 if (!bodyBounds.isEmpty())
                 {
                     const auto centre = bodyBounds.getCentre();
-                    juce::ColourGradient metal(juce::Colour(0xFF141414), centre.x, centre.y,
-                                               juce::Colour(0xFF3C3C3C), centre.x, centre.y - radius * 0.65f,
+                    juce::ColourGradient metal(juce::Colour(0xFF080808), centre.x, centre.y,
+                                               juce::Colour(0xFF505050), centre.x, centre.y - radius * 0.70f,
                                                true /* radial */);
-                    metal.addColour(0.0, juce::Colour(0xFF101010));
-                    metal.addColour(0.6, juce::Colour(0xFF2A2A2A));
-                    metal.addColour(1.0, juce::Colour(0xFF4A4A4A));
+                    metal.addColour(0.0, juce::Colour(0xFF040404));
+                    metal.addColour(0.5, juce::Colour(0xFF303030));
+                    metal.addColour(1.0, juce::Colour(0xFF606060));
                     gg.setGradientFill(metal);
                     gg.fillEllipse(bodyBounds);
-                    // Rim catch-light on body edge (top-left)
-                    juce::ColourGradient edgeHi(juce::Colours::white.withAlpha(0.10f), cx - radius * 0.25f, cy - radius * 0.35f,
-                                                juce::Colours::transparentWhite, cx, cy + radius * 0.45f,
+                    // Rim catch-light on body edge (top-left, sharper)
+                    juce::ColourGradient edgeHi(juce::Colours::white.withAlpha(0.15f), cx - radius * 0.30f, cy - radius * 0.40f,
+                                                juce::Colours::transparentWhite, cx, cy + radius * 0.50f,
                                                 false);
                     gg.setGradientFill(edgeHi);
-                    gg.drawEllipse(bodyBounds, juce::jmax(1.0f, radius * 0.05f));
+                    gg.drawEllipse(bodyBounds, juce::jmax(1.5f, radius * 0.06f));
                 }
-                // Band accent ring (band ID)
+                // Band accent ring (thicker default, more halo-like for signature ID)
                 if (!ringBounds.isEmpty() && bandColour.getAlpha() > 0)
                 {
-                    auto ringBase = bandColour.withMultipliedSaturation(0.6f).brighter(0.12f);
+                    auto ringBase = bandColour.withMultipliedSaturation(0.7f).brighter(0.15f);
                     // Make very dark colors slightly more visible on ring
                     if (bandColour.getBrightness() < 0.2f)
-                        ringBase = ringBase.brighter(0.15f);
-                    juce::ColourGradient ringGrad(ringBase.brighter(0.12f), cx, cy - radius * 0.35f,
-                                                  ringBase.darker(0.12f), cx, cy + radius * 0.35f,
+                        ringBase = ringBase.brighter(0.20f);
+                    juce::ColourGradient ringGrad(ringBase.brighter(0.15f), cx, cy - radius * 0.40f,
+                                                  ringBase.darker(0.15f), cx, cy + radius * 0.40f,
                                                   false);
                     gg.setGradientFill(ringGrad);
-                    const float baseW = juce::jmax(2.0f, radius * 0.08f);
+                    const float baseW = juce::jmax(2.5f, radius * 0.10f); // Slightly wider base for presence
                     gg.drawEllipse(ringBounds, baseW * ringThicknessMul);
                 }
             }
-            // 3) Gloss stronger for plastic shine
+            // 3) Gloss toned down for matte premium feel
             {
                 juce::Path highlight;
                 highlight.addEllipse(knobBounds.reduced(5.0f));
-                gg.setGradientFill(juce::ColourGradient(juce::Colours::white.withAlpha(0.22f), cx, cy - radius * 0.70f,
-                                                        juce::Colours::transparentWhite, cx, cy + radius * 0.10f,
+                gg.setGradientFill(juce::ColourGradient(juce::Colours::white.withAlpha(0.18f), cx, cy - radius * 0.75f,
+                                                        juce::Colours::transparentWhite, cx, cy + radius * 0.15f,
                                                         false));
                 gg.fillPath(highlight);
             }
             // 3b) Subtle rim highlight (cap edge catch-light; top-left biased)
             {
-                juce::ColourGradient rimHigh(juce::Colours::white.withAlpha(0.12f), cx, cy - radius * 0.6f,
-                                             juce::Colours::transparentWhite, cx, cy + radius * 0.2f,
+                juce::ColourGradient rimHigh(juce::Colours::white.withAlpha(0.15f), cx, cy - radius * 0.65f,
+                                             juce::Colours::transparentWhite, cx, cy + radius * 0.25f,
                                              false);
                 gg.setGradientFill(rimHigh);
                 gg.fillEllipse(knobBounds.reduced(2.0f));
             }
-            // 4) Inner rim shadow (keep subtle)
+            // 4) Inner rim shadow (stronger for separation)
             {
-                gg.setColour(juce::Colours::black.withAlpha(0.35f));
-                gg.drawEllipse(knobBounds, juce::jmax(1.0f, radius * 0.06f));
+                gg.setColour(juce::Colours::black.withAlpha(0.40f));
+                gg.drawEllipse(knobBounds, juce::jmax(1.5f, radius * 0.07f));
             }
             return img;
         }
@@ -706,40 +706,48 @@ namespace
         const auto p1 = juce::Point<float>(c.x + std::cos(angleRad) * len,
                                            c.y + std::sin(angleRad) * len);
         // Pointer / indicator: pure white, unobstructed. Keep any “depth” extremely subtle to avoid dark banding.
-        const float w = juce::jmax(1.6f, 1.6f * scaleKey);
+        const float w = juce::jmax(2.0f, 2.0f * scaleKey); // Thicker base for confidence
         juce::Path pointer;
         pointer.startNewSubPath(c);
         pointer.lineTo(p1);
-        // Faint band-coloured glow on the pointer (modern energy; subtle)
+        // Faint band-coloured glow on the pointer (modern energy; subtle, boosted slightly)
         if (bandColour.getAlpha() > 0)
         {
-            g.setColour(bandColour.withAlpha(0.12f));
-            g.strokePath(pointer, juce::PathStrokeType(w + 1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.setColour(bandColour.withAlpha(0.15f));
+            g.strokePath(pointer, juce::PathStrokeType(w + 1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
         // Final crisp indicator
-        g.setColour(juce::Colours::white.withAlpha(0.98f));
+        g.setColour(juce::Colours::white.withAlpha(1.0f));
         g.strokePath(pointer, juce::PathStrokeType(w, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        // Signature dot at tip (small, rounded — adds "pinned" confidence without cheesiness)
+        g.fillEllipse(p1.x - w * 0.6f, p1.y - w * 0.6f, w * 1.2f, w * 1.2f);
         // Center hub / insert — enhanced for black knobs
         if (bandColour.getAlpha() > 0)
         {
-            // Darker body for black knobs — subtle brightening for dimension
-            auto hubBase = bandColour.brighter(bandColour.getBrightness() < 0.3f ? 0.18f : 0.08f);
-            g.setColour(hubBase.withMultipliedSaturation(0.4f));
-            g.fillEllipse(c.x - 6.0f, c.y - 6.0f, 12.0f, 12.0f);
+            // Larger, clearer mass with subtle radial gradient for dimension
+            const float hubRadius = radius * 0.25f; // Proportional, clearer
+            auto hubBase = bandColour.brighter(bandColour.getBrightness() < 0.3f ? 0.22f : 0.10f);
+            juce::ColourGradient hubGrad(hubBase.withMultipliedSaturation(0.5f), c.x, c.y,
+                                         hubBase.darker(0.20f), c.x + hubRadius * 0.8f, c.y + hubRadius * 0.8f,
+                                         true);
+            g.setGradientFill(hubGrad);
+            g.fillEllipse(c.x - hubRadius, c.y - hubRadius, hubRadius * 2.0f, hubRadius * 2.0f);
             // Subtle metallic pin — slightly brighter than body
-            g.setColour(hubBase.brighter(0.25f));
-            g.fillEllipse(c.x - 2.0f, c.y - 2.0f, 4.0f, 4.0f);
+            const float pinRadius = hubRadius * 0.3f;
+            g.setColour(hubBase.brighter(0.30f));
+            g.fillEllipse(c.x - pinRadius, c.y - pinRadius, pinRadius * 2.0f, pinRadius * 2.0f);
             // Deep center dot
-            g.setColour(juce::Colours::black.withAlpha(0.45f));
-            g.fillEllipse(c.x - 1.0f, c.y - 1.0f, 2.0f, 2.0f);
+            g.setColour(juce::Colours::black.withAlpha(0.50f));
+            g.fillEllipse(c.x - pinRadius * 0.5f, c.y - pinRadius * 0.5f, pinRadius, pinRadius);
         }
         else
         {
             // Fallback for truly neutral (shouldn't happen anymore)
+            const float hubRadius = radius * 0.20f;
             g.setColour(juce::Colours::silver);
-            g.fillEllipse(c.x - 4.0f, c.y - 4.0f, 8.0f, 8.0f);
-            g.setColour(juce::Colours::black.withAlpha(0.30f));
-            g.fillEllipse(c.x - 2.0f, c.y - 2.0f, 4.0f, 4.0f);
+            g.fillEllipse(c.x - hubRadius, c.y - hubRadius, hubRadius * 2.0f, hubRadius * 2.0f);
+            g.setColour(juce::Colours::black.withAlpha(0.35f));
+            g.fillEllipse(c.x - hubRadius * 0.5f, c.y - hubRadius * 0.5f, hubRadius, hubRadius);
         }
     }
 }

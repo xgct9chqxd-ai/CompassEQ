@@ -440,23 +440,52 @@ private:
                 return;
 
             const bool isOn = getToggleState();
-            (void) shouldDrawButtonAsDown; // no hover/pressed styling
 
             // SSL BYPASS (red-on) — visual-only override (layout unchanged)
             const auto rOuter = b.toFloat().reduced (3.0f);
             if (rOuter.isEmpty())
                 return;
 
-            // Outer bevel frame
+            // Outer bevel frame (unchanged)
             g.setColour (juce::Colours::silver.withAlpha (0.5f));
             g.drawRoundedRectangle (rOuter, 8.0f, 2.0f);
 
-            // Fill: grey when off, dark red when on
-            const auto fill = isOn ? juce::Colour (0xFF8B0000).brighter (0.2f)
-                                   : juce::Colours::darkgrey.brighter (0.15f);
             const auto rFill = rOuter.reduced (2.0f);
-            g.setColour (fill);
-            g.fillRoundedRectangle (rFill, 6.0f);
+            if (rFill.isEmpty())
+                return;
+
+            // Fill: warmer, less-jarring red when on; neutral dark when off
+            // (aligned with HF/LPF earthy reds; avoids bright alarm-red)
+            juce::Colour top = isOn ? juce::Colour (0xFFB84A4A) : juce::Colour (0xFF3A3A3A);
+            juce::Colour bot = isOn ? juce::Colour (0xFF8F3333) : juce::Colour (0xFF262626);
+
+            // Pressed state: darken slightly + add inset shadow
+            if (shouldDrawButtonAsDown)
+            {
+                top = top.darker (0.10f);
+                bot = bot.darker (0.12f);
+            }
+
+            // Subtle vertical gradient (premium, not glowy)
+            {
+                juce::ColourGradient grad (top, rFill.getCentreX(), rFill.getY(),
+                                           bot, rFill.getCentreX(), rFill.getBottom(),
+                                           false);
+                g.setGradientFill (grad);
+                g.fillRoundedRectangle (rFill, 6.0f);
+            }
+
+            // Pressed-state inset shadow (subtle)
+            if (shouldDrawButtonAsDown)
+            {
+                const auto inner = rFill.reduced (1.0f);
+                g.setColour (juce::Colours::black.withAlpha (0.26f));
+                g.drawRoundedRectangle (inner, 5.0f, 1.0f);
+
+                // Tiny bottom catch-light sells “depressed” without looking like a glow
+                g.setColour (juce::Colours::white.withAlpha (0.05f));
+                g.drawRoundedRectangle (inner.translated (0.0f, 1.0f), 5.0f, 1.0f);
+            }
 
             // Engraved text (3-pass)
             const auto textArea = rFill.reduced (2.0f);
@@ -471,13 +500,8 @@ private:
 
             g.setColour (juce::Colour (0xFFE8E8E8).withAlpha (0.98f));
             g.drawText (txt, textArea, just, false);
-
-            // Subtle bevel + top highlight
-            g.setColour (juce::Colours::white.withAlpha (0.15f));
-            g.drawText (txt, textArea.translated (0.0f, -0.5f), just, false);
-            g.setColour (juce::Colours::white.withAlpha (0.40f));
-            g.drawText (txt, textArea.translated (0.0f, -0.6f), just, false);
         }
+
     };
 
     AltClickToggle globalBypass;
