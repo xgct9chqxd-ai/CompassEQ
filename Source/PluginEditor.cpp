@@ -1662,7 +1662,7 @@ void CompassEQAudioProcessorEditor::resized()
     }
     // ----- Zone 2: Filters (HPF/LPF) -----
     const int filterKnob = 48;
-    const int filterSpacing = 104;
+    const int filterSpacing = 280;
     const int filtersTotalW = filterKnob + filterSpacing + filterKnob;   // 128
     const int filtersStartX = marginL + ((usableW - filtersTotalW) / 2); // 316
     // Stage 5.4b (LOCKED): place HPF/LPF knob centers using topZoneRect:
