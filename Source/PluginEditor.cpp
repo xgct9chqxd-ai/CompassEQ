@@ -545,7 +545,7 @@ namespace
                 // Mostly white specks, occasional tinted particle
                 const bool tinted = (rnd.nextFloat() < 0.18f);
                 const auto col = tinted ? tint.withAlpha(0.10f) : juce::Colours::white.withAlpha(0.06f);
-                g.setColour(col);
+                g.setColour((col).withMultipliedSaturation(1.07f));
                 g.fillEllipse(x, y, s, s);
             }
         }
