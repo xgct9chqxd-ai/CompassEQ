@@ -378,11 +378,11 @@ namespace
                 const float xDiv3 = x0 + 3.0f * laneW + 2.0f * dividerW;
                 // Colored lane vertical span (visual-only): extend slightly so markings/labels don't clip.
                 // Do not change knob positions; only the painted lane extents.
-                constexpr float kLaneTopExtra = 30.0f;
+                constexpr float kLaneTopExtra = 24.0f;
                 const int yTopKHz = juce::jmin(lfFreqKnob.getY(), lmfFreqKnob.getY(),
                                                hmfFreqKnob.getY(), hfFreqKnob.getY());
                 const float y1 = (float)yTopKHz - kLaneTopExtra; // raise lane top slightly above the KHz knob
-                const float y2 = (float)bandsRect.getBottom() + 18.0f;
+                const float y2 = (float)bandsRect.getBottom() + 12.0f;
                 // Soft band panels (colored metal tints; no hard blocks)
                 auto drawBandPanel = [&](juce::Rectangle<float> lane, juce::Colour cTop, juce::Colour cBot)
                 {
@@ -768,7 +768,7 @@ static inline juce::String popupTextFor(juce::Slider &s)
         return juce::String(value, 1) + " dB";
     // Q
     if (name.containsIgnoreCase("q"))
-        return juce::String(value, 2);
+        return juce::String(value, 1);
     // Trim (fallback)
     if (name.containsIgnoreCase("trim"))
         return juce::String(value, 1) + " dB";
@@ -892,8 +892,8 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider(
             const float v = juce::jlimit(0.0f, 1.0f, sliderPos);
 
             // Visual-only sweep trim (separate from knob travel)
-            constexpr float startTrim = 0.0f;
-            constexpr float endTrim   = 0.0f;
+            constexpr float startTrim = juce::MathConstants<float>::pi * (6.0f / 180.0f);
+            constexpr float endTrim   = juce::MathConstants<float>::pi * (6.0f / 180.0f);
 
             const float visStartA = rotaryStartAngle + startTrim;
             const float visEndA   = rotaryEndAngle   - endTrim;
@@ -935,8 +935,8 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider(
         {
             const float v = juce::jlimit(0.0f, 1.0f, sliderPos);
             // Use the SAME visual sweep as the arc above (JUCE rotary angle space: 0=12 o'clock, clockwise)
-            constexpr float startTrim = 0.0f;
-            constexpr float endTrim   = 0.0f;
+            constexpr float startTrim = juce::MathConstants<float>::pi * (6.0f / 180.0f);
+            constexpr float endTrim   = juce::MathConstants<float>::pi * (6.0f / 180.0f);
             const float visStartA = rotaryStartAngle + startTrim;
             const float visEndA   = rotaryEndAngle   - endTrim;
             const float a = visStartA + v * (visEndA - visStartA);
@@ -948,27 +948,13 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider(
             const float nx = c.x + std::sin(a) * notchR;
             const float ny = c.y - std::cos(a) * notchR;
             juce::Rectangle<float> dot(nx - dotR, ny - dotR, dotR * 2.0f, dotR * 2.0f);
-            // Gain dominance: larger bright white central notch + strong rim
-            float gainDotR = dotR;
-            juce::Colour gainFill = juce::Colour(0xFFD6D6D6);
-            float gainFillAlpha = 0.85f;
-            float gainRimAlpha = 0.10f;
-            if (nm.containsIgnoreCase("Gain"))
-            {
-                gainDotR *= 1.28f;             // 28% larger — strong dominance
-                gainFill = juce::Colours::white;
-                gainFillAlpha = 1.0f;
-                gainRimAlpha = 0.38f;          // very strong rim
-            }
-            juce::Rectangle<float> gainDot(nx - gainDotR, ny - gainDotR, gainDotR * 2.0f, gainDotR * 2.0f);
 
-            g.fillEllipse(gainDot.translated(0.0f, 0.9f));
             g.setColour(juce::Colours::black.withAlpha(0.30f));
-            g.setColour(gainFill.withAlpha(gainFillAlpha));
-            g.fillEllipse(gainDot);
+            g.fillEllipse(dot.translated(0.0f, 0.9f));
+            g.setColour(juce::Colour(0xFFD6D6D6).withAlpha(0.85f));
             g.fillEllipse(dot);
-            g.setColour(juce::Colours::white.withAlpha(gainRimAlpha));
-            g.drawEllipse(gainDot, 1.0f);
+            g.setColour(juce::Colours::white.withAlpha(0.10f));
+            g.drawEllipse(dot, 1.0f);
         }
     }
 
@@ -1150,10 +1136,10 @@ void CompassEQAudioProcessorEditor::configureKnob(CompassSlider &s, const char *
     s.setSliderStyle(juce::Slider::RotaryVerticalDrag);
     // Correct standard pro EQ arc: min ~8 o'clock, neutral 12 o'clock straight up, max ~4 o'clock
         s.setRotaryParameters(
-        juce::MathConstants<float>::pi * (210.0f / 180.0f), // min ~7 o'clock
-        juce::MathConstants<float>::pi * (510.0f / 180.0f), // max ~5 o'clock (clockwise sweep)
+        juce::MathConstants<float>::pi * (-240.0f / 180.0f),
+        juce::MathConstants<float>::pi * (  60.0f / 180.0f),
         true);
-s.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    s.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     s.setPopupDisplayEnabled(false, false, this);
 
     // Phase 6: Enable double-click reset to parameter default
@@ -1266,11 +1252,11 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
             const float laneW = (bandsSpanW - 3.0f * dividerW) / 4.0f;
             const float x0 = bandsSpanLeft;
             // Must match drawFaceplateStage3ZonedNoSeams()
-            constexpr float kLaneTopExtra = 30.0f;
+            constexpr float kLaneTopExtra = 24.0f;
             const int yTopKHz = juce::jmin(lfFreq.getY(), lmfFreq.getY(),
                                            hmfFreq.getY(), hfFreq.getY());
             const float y1 = (float)yTopKHz - kLaneTopExtra;
-            const float y2 = (float)bandsRect.getBottom() + 18.0f;
+            const float y2 = (float)bandsRect.getBottom() + 12.0f;
             const auto laneLF = juce::Rectangle<float>(x0, y1, laneW, y2 - y1);
             const auto laneLMF = juce::Rectangle<float>(x0 + laneW + dividerW, y1, laneW, y2 - y1);
             const auto laneHMF = juce::Rectangle<float>(x0 + 2.0f * laneW + 2 * dividerW, y1, laneW, y2 - y1);
@@ -1331,7 +1317,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
     };
     // Pass 3 (redo): explicit, screenshot-obvious hierarchy
     const float kSectionA = 1.00f; // section anchors (LF/LMF/HMF/HF, HPF/LPF, IN/OUT)
-    const float kPrimaryA = 0.96f; // primary scale text (numbers around knobs)
+    const float kPrimaryA = 0.90f; // primary scale text (numbers around knobs)
     const float kLegendA = 0.78f;  // secondary markings (KHz/GR/Q legends)
     auto drawHeaderAbove = [&g, &headerFont, kSectionA, physicalScale, drawEngravedFitted](const char *txt, juce::Rectangle<int> b, int yOffset)
     {
@@ -1345,7 +1331,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
     auto drawLegendBelow = [&g, &microFont, kLegendA, physicalScale, drawEngravedFitted](const char *txt, juce::Rectangle<int> b, int yOffset)
     {
         // Secondary markings: smaller + dimmer + slightly opened tracking
-        g.setFont(microFont.withHeight(10.0f).withExtraKerningFactor(0.02f));
+        g.setFont(microFont.withHeight(8.0f).withExtraKerningFactor(0.02f));
         // Phase 2: Snap baseline Y
         const float snappedY = UIStyle::Snap::snapPx((float)(b.getBottom() + yOffset), physicalScale);
         drawEngravedFitted(txt, b.getX(), (int)snappedY, b.getWidth(), 12,
@@ -1381,8 +1367,8 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
     drawColLabel("HF", assetSlots.colHF, bandLabelY);
     // Headers
     // Raise filter titles to avoid clashing with scale numbers
-    drawHeaderAbove("HPF", hpfFreq.getBounds(), -30);
-    drawHeaderAbove("LPF", lpfFreq.getBounds(), -30);
+    drawHeaderAbove("HPF", hpfFreq.getBounds(), -28);
+    drawHeaderAbove("LPF", lpfFreq.getBounds(), -28);
     drawHeaderAbove("IN", inputMeter.getBounds(), -16);
     drawHeaderAbove("OUT", outputMeter.getBounds(), -16);
     // Bottom trim labels: move IN/OUT below knobs (centered), and remove any "TRIM" wording.
@@ -1419,22 +1405,22 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
             }
         }
         g.setFont(f);
-        drawEngravedFitted("INPUT", inLabel.getX(), inLabel.getY(), inLabel.getWidth(), inLabel.getHeight(),
+        drawEngravedFitted("IN", inLabel.getX(), inLabel.getY(), inLabel.getWidth(), inLabel.getHeight(),
                            juce::Justification::centred, 1, kSectionA, juce::Colours::white);
-        drawEngravedFitted("OUTPUT", outLabel.getX(), outLabel.getY(), outLabel.getWidth(), outLabel.getHeight(),
+        drawEngravedFitted("OUT", outLabel.getX(), outLabel.getY(), outLabel.getWidth(), outLabel.getHeight(),
                            juce::Justification::centred, 1, kSectionA, juce::Colours::white);
     }
     // Legends
-    drawLegendBelow("kHz", lfFreq.getBounds(), 2);
-    drawLegendBelow("GB", lfGain.getBounds(), 2);
-    drawLegendBelow("kHz", lmfFreq.getBounds(), 2);
-    drawLegendBelow("GB", lmfGain.getBounds(), 2);
+    drawLegendBelow("KHz", lfFreq.getBounds(), 2);
+    drawLegendBelow("GR", lfGain.getBounds(), 2);
+    drawLegendBelow("KHz", lmfFreq.getBounds(), 2);
+    drawLegendBelow("GR", lmfGain.getBounds(), 2);
     drawLegendBelow("Q", lmfQ.getBounds(), 2);
-    drawLegendBelow("kHz", hmfFreq.getBounds(), 2);
-    drawLegendBelow("GB", hmfGain.getBounds(), 2);
+    drawLegendBelow("KHz", hmfFreq.getBounds(), 2);
+    drawLegendBelow("GR", hmfGain.getBounds(), 2);
     drawLegendBelow("Q", hmfQ.getBounds(), 2);
-    drawLegendBelow("kHz", hfFreq.getBounds(), 2);
-    drawLegendBelow("GB", hfGain.getBounds(), 2);
+    drawLegendBelow("KHz", hfFreq.getBounds(), 2);
+    drawLegendBelow("GR", hfGain.getBounds(), 2);
     // (No "FREQ" legend under HPF/LPF per spec.)
     // (No "TRIM" legend under the bottom trim knobs per spec.)
     // ===== Scale markings (SSL-style) — semi-circle around knob: ticks + key numbers =====
@@ -1466,126 +1452,23 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
                                          cy + radius * std::sin(ang));
                 inner = UIStyle::Snap::snapPoint(inner, physicalScale);
                 outer = UIStyle::Snap::snapPoint(outer, physicalScale);
-                g.drawLine(inner.x, inner.y, outer.x, outer.y, 1.5f);
+                g.drawLine(inner.x, inner.y, outer.x, outer.y, 1.2f);
             }
             if (numbers == nullptr || numberCount < 2)
                 return;
             // Primary scale text: regular, slightly larger, slightly tightened tracking
-            g.setFont(microFont.withHeight(isFilter ? 14.5f : 12.5f).withExtraKerningFactor(isFilter ? -0.015f : -0.03f));
+            g.setFont(microFont.withHeight(isFilter ? 11.8f : 10.0f).withExtraKerningFactor(isFilter ? -0.015f : -0.03f));
             const float px1 = 1.0f / juce::jmax(1.0f, physicalScale);
             for (int i = 0; i < numberCount; ++i)
             {
                 const float t = (float)i / (float)(numberCount - 1);
                 const float ang = startRad + t * range;
-                float rText = radius + 10.0f;
-
-                // Special-case: LF freq endpoints "20" and "800" — push outward slightly
-                const bool isLF20to800 =
-                    (numberCount == 5 &&
-                     numbers != nullptr &&
-                     numbers[0] != nullptr &&
-                     numbers[numberCount - 1] != nullptr &&
-                     numbers[0][0] == '2' && numbers[0][1] == '0' && numbers[0][2] == '\0' &&
-                     numbers[numberCount - 1][0] == '8' && numbers[numberCount - 1][1] == '0' &&
-                     numbers[numberCount - 1][2] == '0' && numbers[numberCount - 1][3] == '\0');
-
-                if (isLF20to800 && (i == 0 || i == numberCount - 1))
-                    rText += 6.0f;
-
-
-                // Special-case: LMF freq endpoints "120" and "4k" — push outward slightly (no vertical nudge)
-                const bool isLMF120to4k =
-                    (numberCount == 5 &&
-                     numbers != nullptr &&
-                     numbers[0] != nullptr &&
-                     numbers[numberCount - 1] != nullptr &&
-                     numbers[0][0] == '1' && numbers[0][1] == '2' && numbers[0][2] == '0' && numbers[0][3] == 0 &&
-                     numbers[numberCount - 1][0] == '4' && numbers[numberCount - 1][1] == 'k' && numbers[numberCount - 1][2] == 0);
-
-                if (isLMF120to4k && (i == 0 || i == numberCount - 1))
-                    rText += 4.0f;
-
-                // Special-case: HMF freq endpoints "600" and "15k" — identify set for tiny y adjustment
-                const bool isHMF600to15k =
-                    (numberCount == 5 &&
-                     numbers != nullptr &&
-                     numbers[0] != nullptr &&
-                     numbers[numberCount - 1] != nullptr &&
-                     numbers[0][0] == '6' && numbers[0][1] == '0' && numbers[0][2] == '0' && numbers[0][3] == 0 &&
-                     numbers[numberCount - 1][0] == '1' && numbers[numberCount - 1][1] == '5' && numbers[numberCount - 1][2] == 'k' &&
-                     numbers[numberCount - 1][3] == 0);
-
-
-                // Special-case: HF freq endpoints "1.5k" and "22k" — push outward slightly (no vertical nudge)
-                const bool isHF1p5to22k =
-                    (numberCount == 5 &&
-                     numbers != nullptr &&
-                     numbers[0] != nullptr &&
-                     numbers[numberCount - 1] != nullptr &&
-                     // first = "1.5k"
-                     numbers[0][0] == '1' && numbers[0][1] == '.' && numbers[0][2] == '5' && numbers[0][3] == 'k' && numbers[0][4] == 0 &&
-                     // last = "22k"
-                     numbers[numberCount - 1][0] == '2' && numbers[numberCount - 1][1] == '2' && numbers[numberCount - 1][2] == 'k' && numbers[numberCount - 1][3] == 0);
-
-                if (isHF1p5to22k && (i == 0 || i == numberCount - 1))
-                    rText += 4.0f;
-
-                float yNudge = 0.0f;
-
-                // LF freq endpoints "20" and "800" were pushed outward; nudge them slightly UP (visual balance)
-                if (isLF20to800 && (i == 0 || i == numberCount - 1))
-                    yNudge = -5.0f;
-
-                // LMF freq endpoints "120" and "4k" — nudge slightly UP (after outward push)
-                if (isLMF120to4k && (i == 0 || i == numberCount - 1))
-                    yNudge = -3.0f;
-
-                // HMF endpoints "600" and "15k" — nudge slightly DOWN (visual alignment)
-                if (isHMF600to15k && (i == 0 || i == numberCount - 1))
-                    yNudge = 1.0f;
-
-                // HF endpoints "1.5k" and "22k" — nudge slightly UP (after outward push)
-                if (isHF1p5to22k && (i == 0 || i == numberCount - 1))
-                    yNudge = -3.0f;
-
-                float xNudge = 0.0f;
-                
-                // LMF freq label "4k" — nudge slightly LEFT (fine alignment)
-                if (isLMF120to4k && i == numberCount - 1)
-                    xNudge = -1.5f;
-
-                
-                // LF freq label "20" — nudge slightly RIGHT (half-step fine alignment)
-                if (isLF20to800 && i == 0)
-                    xNudge = +1.5f;
-
-
-// HMF freq label "600" — nudge slightly LEFT (fine alignment only)
-const bool isHMF600 =
-    (numberCount == 5 &&
-     numbers != nullptr &&
-     numbers[0] != nullptr &&
-     numbers[0][0] == '6' && numbers[0][1] == '0' && numbers[0][2] == '0' && numbers[0][3] == 0);
-
-if (isHMF600 && i == 0)
-    xNudge = -2.0f;
-
-                const float x = cx + rText * std::cos(ang) + xNudge;
-                const float y = cy + rText * std::sin(ang) + yNudge;
+                const float x = cx + (radius + 8.0f) * std::cos(ang);
+                const float y = cy + (radius + 8.0f) * std::sin(ang);
                 const int w = 24;
                 const int h = 14;
                 const int xi = (int)std::lround(UIStyle::Snap::snapPx(x - (float)(w / 2), physicalScale));
                 const int yi = (int)std::lround(UIStyle::Snap::snapPx(y - (float)(h / 2), physicalScale));
-                // Subtle shadow behind numbers (ALL knobs). Dark-only; no extra brightness.
-                // Uses snapped 1px offset (px1) so it stays consistent across scale factors.
-                g.setColour(juce::Colours::black.withAlpha(isFilter ? 0.18f : 0.14f));
-                g.drawFittedText(numbers[i],
-                                 xi,
-                                 (int)std::lround((float)yi + 1.0f * px1),
-                                 w, h,
-                                 juce::Justification::centred,
-                                 1);
-
                 if (isFilter)
                 {
                     // Subtle halo for readability on nebula/cosmic background (tiny, not 'glowy UI')
@@ -1615,7 +1498,7 @@ if (isHMF600 && i == 0)
         static const char *const kFreqHMF[] = {"600", "4k", "8k", "11k", "15k"};    // 600–15k Hz
         static const char *const kFreqHF[] = {"1.5k", "6.5k", "12k", "17k", "22k"}; // 1.5–22k Hz
         static const char *const kGain[] = {"-18", "-12", "-6", "0", "+6", "+12", "+18"};
-        static const char *const kQ[] = { "0.5", "0.8", "1.3", "1.7", "2" };
+        static const char *const kQ[] = {"0.5", "1", "2", "4", "8"};
         // LF
         drawScaleMarkings(lfFreq.getBounds(), kFreqLF, (int)(sizeof(kFreqLF) / sizeof(kFreqLF[0])));
         drawScaleMarkings(lfGain.getBounds(), kGain, (int)(sizeof(kGain) / sizeof(kGain[0])));

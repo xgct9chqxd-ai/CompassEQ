@@ -378,11 +378,11 @@ namespace
                 const float xDiv3 = x0 + 3.0f * laneW + 2.0f * dividerW;
                 // Colored lane vertical span (visual-only): extend slightly so markings/labels don't clip.
                 // Do not change knob positions; only the painted lane extents.
-                constexpr float kLaneTopExtra = 30.0f;
+                constexpr float kLaneTopExtra = 24.0f;
                 const int yTopKHz = juce::jmin(lfFreqKnob.getY(), lmfFreqKnob.getY(),
                                                hmfFreqKnob.getY(), hfFreqKnob.getY());
                 const float y1 = (float)yTopKHz - kLaneTopExtra; // raise lane top slightly above the KHz knob
-                const float y2 = (float)bandsRect.getBottom() + 18.0f;
+                const float y2 = (float)bandsRect.getBottom() + 12.0f;
                 // Soft band panels (colored metal tints; no hard blocks)
                 auto drawBandPanel = [&](juce::Rectangle<float> lane, juce::Colour cTop, juce::Colour cBot)
                 {
@@ -870,11 +870,20 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider(
             const float cx = disc.getCentreX();
             const float cy = disc.getCentreY();
 
+            // Hierarchy via base-disc luminance (static mass beats dynamic indicators)
+            // Gain knobs: brighter (dominant). Frequency knobs: medium lift (primary).
+            const bool isGainKnob = nm.containsIgnoreCase("gain");
+            const bool isFreqKnob = nm.containsIgnoreCase("frequency");
+            const float baseLift = isGainKnob ? 0.30f : (isFreqKnob ? 0.16f : 0.00f);
+            const auto baseTop = juce::Colour(0xFF2A2A2A).brighter(baseLift);
+            const auto baseBot = juce::Colour(0xFF171717).brighter(baseLift);
+            const auto baseMid = juce::Colour(0xFF202020).brighter(baseLift);
+
             juce::ColourGradient baseGrad(
-                juce::Colour(0xFF2A2A2A), cx - r * 0.25f, cy - r * 0.25f,
-                juce::Colour(0xFF171717), cx + r * 0.35f, cy + r * 0.45f,
+                baseTop, cx - r * 0.25f, cy - r * 0.25f,
+                baseBot, cx + r * 0.35f, cy + r * 0.45f,
                 false);
-            baseGrad.addColour(0.55, juce::Colour(0xFF202020));
+            baseGrad.addColour(0.55, baseMid);
             g.setGradientFill(baseGrad);
             g.fillEllipse(disc);
 
@@ -902,31 +911,37 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider(
             const float endA   = startA + v * (visEndA - startA);
 
             const float arcR = r - juce::jmax(6.0f, r * 0.26f);
+            const bool isGainKnob = nm.containsIgnoreCase("gain");
+            const float arcWBase = juce::jmax(6.4f, r * 0.21f);
+            const float arcW = arcWBase * (isGainKnob ? 1.25f : 1.0f); // +25% thickness for gain dominance
+            const float aHalo = isGainKnob ? 0.24f : 0.18f;
+            const float aMain = isGainKnob ? 1.00f : 0.95f;
+            const float aEdge = isGainKnob ? 0.28f : 0.22f;
             juce::Path arc;
             arc.addCentredArc(c.x, c.y, arcR, arcR, 0.0f, startA, endA, true);
 
             auto arcCol = (bandColour.getAlpha() > 0) ? bandColour : juce::Colour(0xFFBFBFBF);
 
             // soft band-colour halo (subtle; improves mid-value readability)
-            g.setColour(arcCol.withAlpha(0.18f));
-            g.strokePath(arc, juce::PathStrokeType(juce::jmax(6.4f, r * 0.21f) + 3.2f,
+            g.setColour(arcCol.withAlpha(aHalo));
+            g.strokePath(arc, juce::PathStrokeType(arcW + 3.2f,
                                                   juce::PathStrokeType::curved,
                                                   juce::PathStrokeType::rounded));
 
             // under-stroke for contrast
             g.setColour(juce::Colours::black.withAlpha(0.35f));
-            g.strokePath(arc, juce::PathStrokeType(juce::jmax(6.4f, r * 0.21f) + 1.6f,
+            g.strokePath(arc, juce::PathStrokeType(arcW + 1.6f,
                                                   juce::PathStrokeType::curved,
                                                   juce::PathStrokeType::rounded));
 
-            g.setColour(arcCol.withAlpha(0.95f));
-            g.strokePath(arc, juce::PathStrokeType(juce::jmax(6.4f, r * 0.21f),
+            g.setColour(arcCol.withAlpha(aMain));
+            g.strokePath(arc, juce::PathStrokeType(arcW,
                                                   juce::PathStrokeType::curved,
                                                   juce::PathStrokeType::rounded));
 
             // brighter edge to prevent low values blending into the base
-            g.setColour(arcCol.brighter(0.25f).withAlpha(0.22f));
-            g.strokePath(arc, juce::PathStrokeType(juce::jmax(6.4f, r * 0.21f) + 0.9f,
+            g.setColour(arcCol.brighter(0.25f).withAlpha(aEdge));
+            g.strokePath(arc, juce::PathStrokeType(arcW + 0.9f,
                                                   juce::PathStrokeType::curved,
                                                   juce::PathStrokeType::rounded));
         }
@@ -948,27 +963,13 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider(
             const float nx = c.x + std::sin(a) * notchR;
             const float ny = c.y - std::cos(a) * notchR;
             juce::Rectangle<float> dot(nx - dotR, ny - dotR, dotR * 2.0f, dotR * 2.0f);
-            // Gain dominance: larger bright white central notch + strong rim
-            float gainDotR = dotR;
-            juce::Colour gainFill = juce::Colour(0xFFD6D6D6);
-            float gainFillAlpha = 0.85f;
-            float gainRimAlpha = 0.10f;
-            if (nm.containsIgnoreCase("Gain"))
-            {
-                gainDotR *= 1.28f;             // 28% larger — strong dominance
-                gainFill = juce::Colours::white;
-                gainFillAlpha = 1.0f;
-                gainRimAlpha = 0.38f;          // very strong rim
-            }
-            juce::Rectangle<float> gainDot(nx - gainDotR, ny - gainDotR, gainDotR * 2.0f, gainDotR * 2.0f);
 
-            g.fillEllipse(gainDot.translated(0.0f, 0.9f));
             g.setColour(juce::Colours::black.withAlpha(0.30f));
-            g.setColour(gainFill.withAlpha(gainFillAlpha));
-            g.fillEllipse(gainDot);
+            g.fillEllipse(dot.translated(0.0f, 0.9f));
+            g.setColour(juce::Colour(0xFFD6D6D6).withAlpha(0.85f));
             g.fillEllipse(dot);
-            g.setColour(juce::Colours::white.withAlpha(gainRimAlpha));
-            g.drawEllipse(gainDot, 1.0f);
+            g.setColour(juce::Colours::white.withAlpha(0.10f));
+            g.drawEllipse(dot, 1.0f);
         }
     }
 
@@ -1266,11 +1267,11 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
             const float laneW = (bandsSpanW - 3.0f * dividerW) / 4.0f;
             const float x0 = bandsSpanLeft;
             // Must match drawFaceplateStage3ZonedNoSeams()
-            constexpr float kLaneTopExtra = 30.0f;
+            constexpr float kLaneTopExtra = 24.0f;
             const int yTopKHz = juce::jmin(lfFreq.getY(), lmfFreq.getY(),
                                            hmfFreq.getY(), hfFreq.getY());
             const float y1 = (float)yTopKHz - kLaneTopExtra;
-            const float y2 = (float)bandsRect.getBottom() + 18.0f;
+            const float y2 = (float)bandsRect.getBottom() + 12.0f;
             const auto laneLF = juce::Rectangle<float>(x0, y1, laneW, y2 - y1);
             const auto laneLMF = juce::Rectangle<float>(x0 + laneW + dividerW, y1, laneW, y2 - y1);
             const auto laneHMF = juce::Rectangle<float>(x0 + 2.0f * laneW + 2 * dividerW, y1, laneW, y2 - y1);

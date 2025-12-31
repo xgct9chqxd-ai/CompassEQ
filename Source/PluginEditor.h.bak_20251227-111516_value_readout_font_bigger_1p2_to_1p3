@@ -366,7 +366,7 @@ private:
             auto bounds = getLocalBounds().toFloat();
             const float px = 1.0f / physicalScale;
             const auto& font = UIStyle::FontLadder::headerFont (scaleKey);
-            g.setFont (font.withHeight (font.getHeight() * 1.3f).withExtraKerningFactor (-0.04f));
+            g.setFont (font.withHeight (font.getHeight() * 1.2f).withExtraKerningFactor (-0.04f));
 
             // Snap baseline Y
             const float snappedY = UIStyle::Snap::snapPx (bounds.getY(), physicalScale);

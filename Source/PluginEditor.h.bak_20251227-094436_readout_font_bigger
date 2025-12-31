@@ -366,11 +366,11 @@ private:
             auto bounds = getLocalBounds().toFloat();
             const float px = 1.0f / physicalScale;
             const auto& font = UIStyle::FontLadder::headerFont (scaleKey);
-            g.setFont (font.withHeight (font.getHeight() * 1.3f).withExtraKerningFactor (-0.04f));
+            g.setFont (font.withHeight (font.getHeight() * 1.1f).withExtraKerningFactor (-0.04f));
 
             // Snap baseline Y
             const float snappedY = UIStyle::Snap::snapPx (bounds.getY(), physicalScale);
-            bounds.setY (snappedY + (2.0f * px));
+            bounds.setY (snappedY);
 
             // 1) Shadow
             g.setColour (juce::Colours::black.withAlpha (0.80f));
@@ -413,7 +413,7 @@ private:
     
     // Phase 6: Fixed readout bounds (set in resized(), never changes)
     static constexpr int kReadoutX = 300;
-    static constexpr int kReadoutY = 48;
+    static constexpr int kReadoutY = 20;
     static constexpr int kReadoutW = 160;
     static constexpr int kReadoutH = 20;
 

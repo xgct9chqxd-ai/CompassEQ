@@ -378,7 +378,7 @@ namespace
                 const float xDiv3 = x0 + 3.0f * laneW + 2.0f * dividerW;
                 // Colored lane vertical span (visual-only): extend slightly so markings/labels don't clip.
                 // Do not change knob positions; only the painted lane extents.
-                constexpr float kLaneTopExtra = 30.0f;
+                constexpr float kLaneTopExtra = 24.0f;
                 const int yTopKHz = juce::jmin(lfFreqKnob.getY(), lmfFreqKnob.getY(),
                                                hmfFreqKnob.getY(), hfFreqKnob.getY());
                 const float y1 = (float)yTopKHz - kLaneTopExtra; // raise lane top slightly above the KHz knob
@@ -1266,7 +1266,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
             const float laneW = (bandsSpanW - 3.0f * dividerW) / 4.0f;
             const float x0 = bandsSpanLeft;
             // Must match drawFaceplateStage3ZonedNoSeams()
-            constexpr float kLaneTopExtra = 30.0f;
+            constexpr float kLaneTopExtra = 24.0f;
             const int yTopKHz = juce::jmin(lfFreq.getY(), lmfFreq.getY(),
                                            hmfFreq.getY(), hfFreq.getY());
             const float y1 = (float)yTopKHz - kLaneTopExtra;
