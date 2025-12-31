@@ -124,20 +124,21 @@ void CompassEQAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     const auto* bypassParam = apvts.getRawParameterValue (GLOBAL_BYPASS_ID);
     const bool bypassed = (bypassParam != nullptr && bypassParam->load() >= 0.5f);
 
+
+    // Input meter (post input-trim, pre-DSP): updates even when bypassed.
+    const auto* inTrimParamMeter = apvts.getRawParameterValue (INPUT_TRIM_ID);
+    float inPeak = 0.0f;
+    for (int ch = 0; ch < getTotalNumInputChannels(); ++ch)
+        inPeak = juce::jmax (inPeak, buffer.getMagnitude (ch, 0, buffer.getNumSamples()));
+
+    const float inTrimDb   = inTrimParamMeter ? inTrimParamMeter->load() : 0.0f;
+    const float inTrimGain = juce::Decibels::decibelsToGain (inTrimDb);
+
+    const float in01 = juce::jlimit (0.0f, 1.0f, inPeak * inTrimGain);
+    inMeter01.store (in01, std::memory_order_relaxed);
     if (! bypassed)
     {        const auto* inTrimParam  = apvts.getRawParameterValue (INPUT_TRIM_ID);
         const auto* outTrimParam = apvts.getRawParameterValue (OUTPUT_TRIM_ID);
-
-        // Input meter (post input-trim, pre-DSP): reflect Input Trim on the input meter.
-        float inPeak = 0.0f;
-        for (int ch = 0; ch < getTotalNumInputChannels(); ++ch)
-            inPeak = juce::jmax (inPeak, buffer.getMagnitude (ch, 0, buffer.getNumSamples()));
-
-        const float inTrimDb   = inTrimParam ? inTrimParam->load() : 0.0f;
-        const float inTrimGain = juce::Decibels::decibelsToGain (inTrimDb);
-
-        const float in01 = juce::jlimit (0.0f, 1.0f, inPeak * inTrimGain);
-        inMeter01.store (in01, std::memory_order_relaxed);
         const auto* hpfParam     = apvts.getRawParameterValue (HPF_FREQUENCY_ID);
         const auto* lpfParam     = apvts.getRawParameterValue (LPF_FREQUENCY_ID);
         
