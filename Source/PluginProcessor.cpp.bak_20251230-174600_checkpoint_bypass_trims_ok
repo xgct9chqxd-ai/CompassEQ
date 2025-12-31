@@ -149,8 +149,7 @@ void CompassEQAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     }
 
     if (! bypassed)
-    {
-        const auto* inTrimParam  = apvts.getRawParameterValue (INPUT_TRIM_ID);
+    {        const auto* inTrimParam  = apvts.getRawParameterValue (INPUT_TRIM_ID);
         const auto* outTrimParam = apvts.getRawParameterValue (OUTPUT_TRIM_ID);
         const auto* hpfParam     = apvts.getRawParameterValue (HPF_FREQUENCY_ID);
         const auto* lpfParam     = apvts.getRawParameterValue (LPF_FREQUENCY_ID);
