@@ -1072,6 +1072,7 @@ CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor(CompassEQAudioProce
     globalBypass.onAltClick = [this]
     {
         proc.togglePureMode();
+        globalBypass.repaint(); // Pure Mode LED must refresh immediately on Alt-click
 #if JUCE_DEBUG
         DBG(juce::String("[UI] Pure Mode = ") + (proc.getPureMode() ? "ON" : "OFF"));
 #endif
@@ -1812,6 +1813,52 @@ void CompassEQAudioProcessorEditor::paint(juce::Graphics &g)
             triggerAsyncUpdate();
     }
 }
+
+void CompassEQAudioProcessorEditor::paintOverChildren (juce::Graphics& g)
+{
+    // Phase 3 UI: Pure Mode visual indicator (UI-only; no parameters; no DSP)
+    // Draw OVER child components so it stays visible on top of the Global Bypass latch.
+    if (proc.getPureMode())
+    {
+        const auto b = globalBypass.getBounds().toFloat();
+
+        // Match the bypass latch shape: use a pill/capsule radius derived from height.
+        const float cornerR = b.getHeight() * 0.5f;
+
+        // Slight expansion so the overlay sits outside the button edge, not on top of its fill.
+        const auto ring = b.expanded (2.0f);
+
+        // 1) Soft filled presence (more visible, still tasteful)
+        g.setColour (juce::Colour (0xFF1E90FF).withAlpha (0.18f));
+        g.fillRoundedRectangle (ring, cornerR);
+
+        // 2) Inner fill (adds "body" without needing huge alpha)
+        const auto inner = ring.reduced (1.0f);
+        g.setColour (juce::Colour (0xFF1E90FF).withAlpha (0.10f));
+        g.fillRoundedRectangle (inner, cornerR);
+
+        // 3) Stronger outline on top (readable at a glance)
+        g.setColour (juce::Colour (0xFF1E90FF).withAlpha (1.0f));
+        g.drawRoundedRectangle (ring, cornerR, 2.5f);
+
+        // Optional small LED dot + tag (kept tiny)
+        const float ledR = 3.0f;
+        const float ledX = ring.getX() + 8.0f;
+        const float ledY = ring.getCentreY() - ledR;
+
+        g.setColour (juce::Colour (0xFF1E90FF).withAlpha (1.0f));
+        g.fillEllipse (ledX, ledY, ledR * 2.0f, ledR * 2.0f);
+
+        g.setColour (juce::Colour (0xFF1E90FF).withAlpha (0.95f));
+        g.setFont (juce::Font (10.0f, juce::Font::bold));
+        g.drawText ("PURE",
+                    (int) (ledX + ledR * 2.0f + 6.0f), (int) (ring.getY()),
+                    (int) (ring.getWidth() - 24.0f), (int) (ring.getHeight()),
+                    juce::Justification::centredLeft, false);
+    }
+}
+
+
 void CompassEQAudioProcessorEditor::handleAsyncUpdate()
 {
     staticCacheRebuildPending.store(false, std::memory_order_release);
@@ -1846,7 +1893,8 @@ void CompassEQAudioProcessorEditor::handleAsyncUpdate()
         return;
 
     // Phase 3A: Create image at physical pixel size (rebuild happens on UI thread, NOT in paint)
-    juce::Image img(juce::Image::ARGB, pw, ph, true);
+
+  juce::Image img(juce::Image::ARGB, pw, ph, true);
     juce::Graphics cg(img);
     cg.addTransform(juce::AffineTransform::scale(physicalScale));
     // Phase 3 Fix: Pass physicalScale to renderStaticLayer so snapping uses the same scale paint() observed
