@@ -29,6 +29,9 @@ public:
         lfShelf.assign ((size_t) channels, Biquad{});
         lmfPeak.assign ((size_t) channels, Biquad{});
         hmfPeak.assign ((size_t) channels, Biquad{});
+        // Phase 3R scaffold: per-channel state (LMF/HMF only; wired later)
+        phase3rLmf.assign ((size_t) channels, Phase3RBandState{});
+        phase3rHmf.assign ((size_t) channels, Phase3RBandState{});
         hfShelf.assign ((size_t) channels, Biquad{});
         lpf2.assign    ((size_t) channels, Biquad{});
 
@@ -92,6 +95,8 @@ public:
         for (auto& b : lfShelf) b.reset();
         for (auto& b : lmfPeak) b.reset();
         for (auto& b : hmfPeak) b.reset();
+        for (auto& s : phase3rLmf) { s = Phase3RBandState{}; }
+        for (auto& s : phase3rHmf) { s = Phase3RBandState{}; }
         for (auto& b : hfShelf) b.reset();
         for (auto& b : lpf2)    b.reset();
 
@@ -244,7 +249,74 @@ private:
         }
     };
 
-    // ---------- sanitize helpers (no “Phase law” embedded; just safety clamps) ----------
+    // ===== Mini-Phase 3R: Band-Local Resonance Suppression (Scaffold Only; no audio-path wiring) =====
+    // IMPORTANT (Contract):
+    //  - LMF/HMF only (implementation later)
+    //  - Boost-only gating (implementation later)
+    //  - Pure Mode bypass is by construction (Pure branch returns before filters/EQ)
+    //  - Patch 1 adds state + helper builders ONLY (no sample-loop processing changes)
+    struct Phase3RBandState
+    {
+        // Detector biquads (time-domain IIR only)
+        Biquad narrowBP;   // intended: RBJ bandpass @ center freq, Q ~ 30 (wired later)
+        Biquad broadBP;    // intended: RBJ bandpass @ center freq, Q = userQ/2 (wired later)
+
+        // Suppressor biquad (post-band peaking cut @ center freq, fixed Q=8; wired later)
+        Biquad suppressPeak;
+
+        // Envelopes / smoothing (wired later)
+        float narrowEnv = 0.0f;     // EWMA(abs(y)) for narrowBP
+        float broadEnv  = 0.0f;     // EWMA(x^2) for broadBP (RMS-style)
+        float persist   = 0.0f;     // persistence integrator (~50ms requirement)
+        float detectSm  = 0.0f;     // slow detection smoothing (atk ~100ms / rel ~1s)
+
+        // Depth control (wired later)
+        float depthDb     = 0.0f;   // current suppression depth (0..3 dB)
+        float lastDepthDb = 0.0f;   // last coefficient-applied depth (for control-rate updates)
+
+        // Param change tracking for soft-decay on jumps (wired later)
+        float lastFreqHz  = -1.0f;
+        float lastQ       = -1.0f;
+        float lastGainDb  = 9999.0f;
+    };
+
+    // RBJ bandpass (constant skirt gain) builder; used later for narrow/broad detectors.
+    inline void makeBandPass (Biquad& bq, float hz, float q) noexcept
+    {
+        const float f0 = sanitizeHz (hz);
+        const float Q  = sanitizeQ  (q);
+
+        const float w0 = 2.0f * juce::MathConstants<float>::pi * (f0 / (float) sr);
+        const float cw = std::cos (w0);
+        const float sw = std::sin (w0);
+        const float alpha = sw / (2.0f * Q);
+
+        // RBJ bandpass (constant skirt gain, peak gain = Q)
+        float b0 =  sw * 0.5f;
+        float b1 =  0.0f;
+        float b2 = -sw * 0.5f;
+        float a0 =  1.0f + alpha;
+        float a1 = -2.0f * cw;
+        float a2 =  1.0f - alpha;
+
+        const float invA0 = 1.0f / a0;
+        bq.b0 = b0 * invA0;
+        bq.b1 = b1 * invA0;
+        bq.b2 = b2 * invA0;
+        bq.a1 = a1 * invA0;
+        bq.a2 = a2 * invA0;
+    }
+
+    // Suppressor builder (peaking EQ). Wired later; Patch 1 only.
+    inline void makePhase3RSuppressor (Biquad& bq, float hz, float depthDbNeg) noexcept
+    {
+        // depthDbNeg is expected <= 0 (negative gain); Q fixed at 8 per contract.
+        makePeakingEQ (bq, hz, 8.0f, depthDbNeg);
+    }
+
+    // ===== End Phase 3R scaffold =====
+
+    // ---------- sanitize helpers (no “Phase law” embedded; just safety clamps) (no “Phase law” embedded; just safety clamps) ----------
     inline float sanitizeHz (float hz) const noexcept
     {
         const float minHz = 1.0f;
@@ -266,6 +338,44 @@ private:
     {
         // A = sqrt(10^(dB/20)) = 10^(dB/40)
         return std::pow (10.0f, db / 40.0f);
+    }
+
+    // ===== Phase 3: Protective Engine (parameter-driven only; no dynamics) =====
+    // Boost protection: clamp extreme boosts (monotonic, bounded, reversible)
+    inline static float phase3ProtectBoostDb (float db) noexcept
+    {
+        constexpr float kBoostThreshDb = 12.0f;
+        constexpr float kBoostMaxDb    = 12.0f; // hard clamp for Phase 3 safety
+        if (db <= kBoostThreshDb)
+            return db;
+        return kBoostMaxDb;
+    }
+
+    // Cut restoration: reduce *extreme* cuts slightly (structural only; self-limited)
+    inline static float phase3RestoreCutDb (float db) noexcept
+    {
+        constexpr float kCutThreshDb   = -12.0f;
+        constexpr float kRestoreMaxDb  =  1.0f;  // at most +1 dB of restoration
+        if (db >= kCutThreshDb)
+            return db;
+
+        // depth beyond threshold (positive number)
+        const float depth = (kCutThreshDb - db);
+        // scale 0..1 over 0..12 dB beyond threshold, then cap restore
+        const float t = juce::jlimit (0.0f, 1.0f, depth / 12.0f);
+        const float restore = kRestoreMaxDb * t;
+        return db + restore;
+    }
+
+    // Q widening for boosted peaking bands: small, bounded, monotonic
+    inline static float phase3WidenQForBoost (float q, float gainDbEff) noexcept
+    {
+        constexpr float kBoostThreshDb = 12.0f;
+        constexpr float kMinQ          = 0.25f; // never get too wide
+        if (gainDbEff <= kBoostThreshDb)
+            return q;
+        // widen by reducing Q toward kMinQ (very conservative because boost already clamped)
+        return juce::jmax (kMinQ, q * 0.85f);
     }
 
     // ---------- RBJ coefficient builders (pure math; no allocation) ----------
@@ -442,26 +552,31 @@ private:
         const float lpfHz = sanitizeHz (lpfHzSm.getCurrentValue());
 
         const float lfF = sanitizeHz (lfFreqSm.getCurrentValue());
-        const float lfG = sanitizeDb (lfGainDbSm.getCurrentValue());
+        const float lfG_user = sanitizeDb (lfGainDbSm.getCurrentValue());
+        const float lfG_eff  = phase3ProtectBoostDb (phase3RestoreCutDb (lfG_user));
 
         const float lmfF  = sanitizeHz (lmfFreqSm.getCurrentValue());
-        const float lmfG  = sanitizeDb (lmfGainDbSm.getCurrentValue());
-        const float lmfQv = sanitizeQ  (lmfQSm.getCurrentValue());
+        const float lmfG_user = sanitizeDb (lmfGainDbSm.getCurrentValue());
+        const float lmfG_eff  = phase3ProtectBoostDb (phase3RestoreCutDb (lmfG_user));
+        const float lmfQv_user = sanitizeQ  (lmfQSm.getCurrentValue());
+        const float lmfQv_eff  = phase3WidenQForBoost (lmfQv_user, lmfG_eff);
 
         const float hmfF  = sanitizeHz (hmfFreqSm.getCurrentValue());
-        const float hmfG  = sanitizeDb (hmfGainDbSm.getCurrentValue());
-        const float hmfQv = sanitizeQ  (hmfQSm.getCurrentValue());
+        const float hmfG_user = sanitizeDb (hmfGainDbSm.getCurrentValue());
+        const float hmfG_eff  = phase3ProtectBoostDb (phase3RestoreCutDb (hmfG_user));
+        const float hmfQv_user = sanitizeQ  (hmfQSm.getCurrentValue());
+        const float hmfQv_eff  = phase3WidenQForBoost (hmfQv_user, hmfG_eff);
 
         const float hfF = sanitizeHz (hfFreqSm.getCurrentValue());
-        const float hfG = sanitizeDb (hfGainDbSm.getCurrentValue());
-
+        const float hfG_user = sanitizeDb (hfGainDbSm.getCurrentValue());
+        const float hfG_eff  = phase3ProtectBoostDb (phase3RestoreCutDb (hfG_user));
         for (int ch = 0; ch < channels; ++ch)
         {
             makeHighPass (hpf2[(size_t) ch], hpfHz, 0.70710678f);
-            makeLowShelf (lfShelf[(size_t) ch], lfF, lfG);
-            makePeakingEQ(lmfPeak[(size_t) ch], lmfF, lmfQv, lmfG);
-            makePeakingEQ(hmfPeak[(size_t) ch], hmfF, hmfQv, hmfG);
-            makeHighShelf(hfShelf[(size_t) ch], hfF, hfG);
+            makeLowShelf (lfShelf[(size_t) ch], lfF, lfG_eff);
+            makePeakingEQ(lmfPeak[(size_t) ch], lmfF, lmfQv_eff, lmfG_eff);
+            makePeakingEQ(hmfPeak[(size_t) ch], hmfF, hmfQv_eff, hmfG_eff);
+            makeHighShelf(hfShelf[(size_t) ch], hfF, hfG_eff);
             makeLowPass  (lpf2[(size_t) ch], lpfHz, 0.70710678f);
         }
     }
@@ -544,6 +659,10 @@ private:
     std::vector<Biquad> lfShelf;
     std::vector<Biquad> lmfPeak;
     std::vector<Biquad> hmfPeak;
+
+    // Phase 3R scaffold state (LMF/HMF only; wired later)
+    std::vector<Phase3RBandState> phase3rLmf;
+    std::vector<Phase3RBandState> phase3rHmf;
     std::vector<Biquad> hfShelf;
     std::vector<Biquad> lpf2;
 
