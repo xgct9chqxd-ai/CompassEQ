@@ -14,3 +14,7 @@ Docs/
 # Local build artifacts (if not already ignored)
 build/
 Build*/
+
+# py-patch safety backups
+*.bak_*
+*.tmp_py_patch
