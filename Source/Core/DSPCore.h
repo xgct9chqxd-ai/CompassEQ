@@ -10,8 +10,13 @@ class DSPCore final
 public:
     DSPCore() = default;
 
+
+    // ===== Phase 3: Pure Mode bridge (internal; not a parameter) =====
+    inline void setPureMode (bool enabled) noexcept { pureMode = enabled; }
+    inline bool getPureMode() const noexcept        { return pureMode; }
     inline void prepare (double sampleRate, int /*samplesPerBlock*/, int numChannels)
     {
+        pureMode = false; // Phase 3C: lifecycle safety (prepare)
         sr = (sampleRate > 0.0 ? sampleRate : 44100.0);
         channels = juce::jmax (1, numChannels);
 
@@ -82,6 +87,7 @@ public:
 
     inline void reset() noexcept
     {
+        pureMode = false; // Phase 3C: lifecycle safety (reset)
         for (auto& b : hpf2)    b.reset();
         for (auto& b : lfShelf) b.reset();
         for (auto& b : lmfPeak) b.reset();
@@ -136,6 +142,36 @@ public:
         {
             const float inG  = inTrimLin.getNextValue();
             const float outG = outTrimLin.getNextValue();
+
+            if (pureMode)
+            {
+                // Pure Mode (Phase 3A): trims only — skip smoothers + filters/EQ entirely
+                #if JUCE_DEBUG
+                {
+                    static bool  sLastPure = false;
+                    static float sLastInG  = -1.0f;
+                    static float sLastOutG = -1.0f;
+
+                    if (! sLastPure || inG != sLastInG || outG != sLastOutG)
+                    {
+                        DBG(juce::String("[DSPCore] PureMode trims: inG=") + juce::String(inG, 6)
+                            + " outG=" + juce::String(outG, 6)
+                            + " g=" + juce::String(inG * outG, 6));
+                        sLastPure = true;
+                        sLastInG  = inG;
+                        sLastOutG = outG;
+                    }
+                }
+                #endif
+
+                const float g = inG * outG;
+                for (int ch = 0; ch < chs; ++ch)
+                {
+                    auto* d = buffer.getWritePointer (ch);
+                    d[i] *= g;
+                }
+                continue;
+            }
 
             // advance smoothers (filters)
             hpfHzSm.getNextValue();
@@ -475,6 +511,9 @@ private:
         // rebuild (pure math only)
         rebuildAllBiquads();
     }
+    bool pureMode = false;
+
+
 
     double sr = 44100.0;
     int channels = 2;
