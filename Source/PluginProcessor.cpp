@@ -124,6 +124,31 @@ void CompassEQAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     const auto* bypassParam = apvts.getRawParameterValue (GLOBAL_BYPASS_ID);
     const bool bypassed = (bypassParam != nullptr && bypassParam->load() >= 0.5f);
 
+    // HARD GLOBAL BYPASS (engine OFF): pass-through only, no trims, no DSP.
+    // IMPORTANT: Pure Mode is NOT hard bypass; it continues through the normal processing path.
+    const bool pureModeOn = getPureMode();
+
+    // Phase 3: sync DSPCore pure-mode state once per block
+    dspCore.setPureMode (pureModeOn);
+
+    if (bypassed && ! pureModeOn)
+    {
+        // Clear any output channels that don't have corresponding input channels
+        for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
+            buffer.clear(ch, 0, buffer.getNumSamples());
+
+        // Pass-through for channels we do have
+        const int n = juce::jmin(getTotalNumInputChannels(), getTotalNumOutputChannels());
+        for (int ch = 0; ch < n; ++ch)
+        {
+            // Copy in-place is safe even if host provides same buffer for in/out
+            auto* dst = buffer.getWritePointer(ch);
+            const auto* srcp = buffer.getReadPointer(ch);
+            if (dst != srcp)
+                std::memcpy(dst, srcp, (size_t) buffer.getNumSamples() * sizeof(float));
+        }
+        return;
+    }
 
     // Input meter (post input-trim, pre-DSP): updates even when bypassed.
     const auto* inTrimParamMeter = apvts.getRawParameterValue (INPUT_TRIM_ID);
@@ -136,25 +161,19 @@ void CompassEQAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
 
     const float in01 = juce::jlimit (0.0f, 1.0f, inPeak * inTrimGain);
     inMeter01.store (in01, std::memory_order_relaxed);
-
     // If bypassed, keep gain staging active (Input/Output Trim) while skipping DSP/EQ.
     const auto* outTrimParamMeter = apvts.getRawParameterValue (OUTPUT_TRIM_ID);
     const float outTrimDb   = outTrimParamMeter ? outTrimParamMeter->load() : 0.0f;
     const float outTrimGain = juce::Decibels::decibelsToGain (outTrimDb);
-
-    if (bypassed)
-    {
-        const float bypassGain = inTrimGain * outTrimGain;
-        buffer.applyGain (bypassGain);
-    }
-
-    if (! bypassed)
+    // Engine path (normal OR Pure Mode): always feed targets + run dspCore.
+    // Hard bypass (engine OFF) is handled above via the early return when (bypassed && !pureModeOn).
     {
         const auto* inTrimParam  = apvts.getRawParameterValue (INPUT_TRIM_ID);
         const auto* outTrimParam = apvts.getRawParameterValue (OUTPUT_TRIM_ID);
+
         const auto* hpfParam     = apvts.getRawParameterValue (HPF_FREQUENCY_ID);
         const auto* lpfParam     = apvts.getRawParameterValue (LPF_FREQUENCY_ID);
-        
+
         // EQ band params (Phase 2B wiring)
         const auto* lfFreqParam  = apvts.getRawParameterValue (LF_FREQUENCY_ID);
         const auto* lfGainParam  = apvts.getRawParameterValue (LF_GAIN_ID);
@@ -170,12 +189,26 @@ void CompassEQAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         const auto* hfFreqParam  = apvts.getRawParameterValue (HF_FREQUENCY_ID);
         const auto* hfGainParam  = apvts.getRawParameterValue (HF_GAIN_ID);
 
+        #if JUCE_DEBUG
+        {
+            static bool sLastPure = false;
+            static bool sLastByp  = false;
+            const bool pureNow = getPureMode();
+            if (pureNow != sLastPure || bypassed != sLastByp)
+            {
+                DBG(juce::String("[DSP] bypass=") + (bypassed ? "1" : "0")
+                    + " pure=" + (pureNow ? "1" : "0"));
+                sLastPure = pureNow;
+                sLastByp  = bypassed;
+            }
+        }
+        #endif
         dspCore.setTargets (
             inTrimParam  ? inTrimParam->load()  : 0.0f,
             outTrimParam ? outTrimParam->load() : 0.0f,
             hpfParam     ? hpfParam->load()     : Ranges::HPF_DEF,
             lpfParam     ? lpfParam->load()     : Ranges::LPF_DEF);
-        
+
         dspCore.setBandTargets (
             lfFreqParam  ? lfFreqParam->load()  : Ranges::LF_FREQ_DEF,
             lfGainParam  ? lfGainParam->load()  : Ranges::GAIN_DEF,
@@ -194,7 +227,9 @@ void CompassEQAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
 
         dspCore.process (buffer);
     }
+
     // Output meter (post-DSP): measure the buffer after processing/bypass.
+
     float outPeak = 0.0f;
     for (int ch = 0; ch < getTotalNumOutputChannels(); ++ch)
         outPeak = juce::jmax (outPeak, buffer.getMagnitude (ch, 0, buffer.getNumSamples()));
