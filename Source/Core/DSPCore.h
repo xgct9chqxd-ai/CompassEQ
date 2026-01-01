@@ -213,7 +213,34 @@ public:
                 // EQ Bands (fixed topology)
                 x = lfShelf[(size_t) ch].process (x);
                 x = lmfPeak[(size_t) ch].process (x);
+                // Phase 3R (LMF) — post-band wiring ONLY (contract)
+                if (phase3rLmfGateOpen)
+                {
+                    // Precomputed control-rate constants
+                    const float envA = phase3rEnvA_fast;
+                    const float envB = (1.0f - envA);
+                    x = phase3rProcessSample (phase3rLmf[(size_t) ch], x,
+                                              true,
+                                              envA, envB,
+                                              phase3rPersistDecay,
+                                              phase3rAtkA, phase3rRelA,
+                                              phase3rDepthSlewPerSample);
+                }
+
                 x = hmfPeak[(size_t) ch].process (x);
+                // Phase 3R (HMF) — post-band wiring ONLY (contract)
+                if (phase3rHmfGateOpen)
+                {
+                    const float envA = phase3rEnvA_fast;
+                    const float envB = (1.0f - envA);
+                    x = phase3rProcessSample (phase3rHmf[(size_t) ch], x,
+                                              true,
+                                              envA, envB,
+                                              phase3rPersistDecay,
+                                              phase3rAtkA, phase3rRelA,
+                                              phase3rDepthSlewPerSample);
+                }
+
                 x = hfShelf[(size_t) ch].process (x);
 
                 // LPF 12 dB/oct biquad
@@ -312,6 +339,140 @@ private:
     {
         // depthDbNeg is expected <= 0 (negative gain); Q fixed at 8 per contract.
         makePeakingEQ (bq, hz, 8.0f, depthDbNeg);
+    }
+
+    
+    // ===== Phase 3R runtime (Patch 2): time-domain detector + control-rate coefficient updates =====
+    // Contract locks:
+    //  - eps = 1e-12f
+    //  - ratio uses RMS/RMS: narrowRms / (broadRms + eps)
+    //  - minBroadRms guard required
+    //  - suppressor is peaking cut biquad Q=8 (makePhase3RSuppressor)
+    //  - depth bound <= 3 dB, depth slew <= 1 dB/s
+    //  - micro-depth bypass < 0.02 dB
+    //  - boost-only gate > +1 dB (effective gain)
+    //  - Pure Mode unchanged (Pure branch returns before filters/EQ)
+    inline float phase3rProcessSample (Phase3RBandState& s,
+                                      float xBand,
+                                      const bool gateOpen,
+                                      const float envA,
+                                      const float envB,
+                                      const float persistDecay,
+                                      const float atkA,
+                                      const float relA,
+                                      const float depthSlewPerSample) noexcept
+    {
+        // If gate is closed, we smoothly release toward no-op (no hard reset).
+        // Detection can decay naturally; suppression target is forced toward 0 via depth slew.
+        const float n = s.narrowBP.process (xBand);
+        const float b = s.broadBP.process  (xBand);
+
+        // Fast envelopes (energy-based for both; RMS computed via sqrt)
+        s.narrowEnv = envA * s.narrowEnv + envB * (n * n);
+        s.broadEnv  = envA * s.broadEnv  + envB * (b * b);
+
+        constexpr float eps         = 1.0e-12f;
+        constexpr float minBroadRms = 1.0e-6f;
+
+        const float narrowRms = std::sqrt (juce::jmax (0.0f, s.narrowEnv));
+        const float broadRms  = std::sqrt (juce::jmax (0.0f, s.broadEnv));
+
+        float excess = 0.0f;
+        if (gateOpen && broadRms >= minBroadRms)
+        {
+            const float ratio = narrowRms / (broadRms + eps);
+            excess = juce::jmax (0.0f, ratio - 1.0f);
+            // Clamp excess before persistence (contract)
+            excess = juce::jlimit (0.0f, 6.0f, excess);
+        }
+
+        // Persistence (~50ms): hold peaks, decay otherwise
+        s.persist = juce::jmax (excess, s.persist * persistDecay);
+
+        // Slow AR smoothing (atk ~100ms / rel ~1s) on persistence
+        const float target = s.persist;
+        const float a = (target > s.detectSm) ? atkA : relA;
+        s.detectSm = a * s.detectSm + (1.0f - a) * target;
+
+        // Map detectSm -> depthTargetDb (0..3 dB)
+        float depthTargetDb = juce::jlimit (0.0f, 3.0f, s.detectSm * 3.0f);
+
+        // If gate closed, target becomes 0 (true no-op goal), but release is slewed.
+        if (! gateOpen)
+            depthTargetDb = 0.0f;
+
+        // Depth slew <= 1 dB/s (contract)
+        const float d = depthTargetDb - s.depthDb;
+        const float step = juce::jlimit (-depthSlewPerSample, depthSlewPerSample, d);
+        s.depthDb += step;
+
+        // Micro-depth bypass (< 0.02 dB)
+        if (s.depthDb < 0.02f)
+            return xBand;
+
+        // Apply suppressor biquad (coeffs updated at control-rate only)
+        return s.suppressPeak.process (xBand);
+    }
+
+    inline bool phase3rParamJump10pct (float now, float last) noexcept
+    {
+        if (last <= 0.0f) return true;
+        return std::fabs (now - last) > (0.10f * last);
+    }
+
+    inline bool phase3rGainJump (float nowDb, float lastDb) noexcept
+    {
+        // conservative: treat ~0.5 dB delta as a "meaningful" jump for coeff refresh
+        return std::fabs (nowDb - lastDb) > 0.5f;
+    }
+
+    inline void phase3rUpdateCoeffsForBand (Phase3RBandState& s,
+                                           float freqHz,
+                                           float qEff,
+                                           float gainEffDb,
+                                           bool gateOpen,
+                                           bool forceSuppressorOnly) noexcept
+    {
+        // Detector biquads update on meaningful param jumps (control-rate only)
+        const bool freqJump = (s.lastFreqHz < 0.0f) ? true : phase3rParamJump10pct (freqHz, s.lastFreqHz);
+        const bool qJump    = (s.lastQ < 0.0f)      ? true : phase3rParamJump10pct (qEff,   s.lastQ);
+        const bool gJump    = (s.lastGainDb > 9000.0f) ? true : phase3rGainJump (gainEffDb, s.lastGainDb);
+
+        if (! forceSuppressorOnly && (freqJump || qJump || gJump))
+        {
+            // narrow detector: fixed high-Q bandpass
+            makeBandPass (s.narrowBP, freqHz, 30.0f);
+
+            // broad detector: tied to boosted band width (Q/2)
+            makeBandPass (s.broadBP,  freqHz, juce::jmax (0.10f, qEff * 0.5f));
+
+            s.lastFreqHz = freqHz;
+            s.lastQ      = qEff;
+            s.lastGainDb = gainEffDb;
+
+            // Soft-decay on big jumps (no hard reset)
+            s.persist  *= 0.5f;
+            s.detectSm *= 0.5f;
+        }
+
+        // Suppressor coeff update if applied depth changed meaningfully and gate is open.
+        // NOTE: coefficients are refreshed at control-rate only; sample-loop uses existing bq.
+        if (gateOpen)
+        {
+            if (std::fabs (s.depthDb - s.lastDepthDb) >= 0.02f)
+            {
+                const float depthDbNeg = -juce::jlimit (0.0f, 3.0f, s.depthDb);
+                makePhase3RSuppressor (s.suppressPeak, freqHz, depthDbNeg);
+                s.lastDepthDb = s.depthDb;
+            }
+        }
+        else
+        {
+            // Gate closed: ensure lastDepthDb chases toward 0 smoothly at control-rate.
+            // We do not rebuild coeffs if micro-bypassed; sample-loop will bypass anyway.
+            if (s.lastDepthDb != 0.0f && s.depthDb < 0.02f)
+                s.lastDepthDb = 0.0f;
+        }
     }
 
     // ===== End Phase 3R scaffold =====
@@ -611,7 +772,55 @@ private:
         const bool hmfChanged = !juce::approximatelyEqual (hmfF, lastHmfFreq) || !juce::approximatelyEqual (hmfG, lastHmfGainDb) || !juce::approximatelyEqual (hmfQv, lastHmfQ);
         const bool hfChanged  = !juce::approximatelyEqual (hfF, lastHfFreq) || !juce::approximatelyEqual (hfG, lastHfGainDb);
 
-        if (! (hpfChanged || lpfChanged || lfChanged || lmfChanged || hmfChanged || hfChanged))
+        // ----- Phase 3R control-rate cache + need detection (Patch 2) -----
+        // Compute effective LMF/HMF values at control-rate (same transforms as rebuildAllBiquads)
+        {
+            const float lmfF_eff  = sanitizeHz (lmfF);
+            const float lmfG_user = sanitizeDb (lmfG);
+            const float lmfG_eff  = phase3ProtectBoostDb (phase3RestoreCutDb (lmfG_user));
+            const float lmfQ_user = sanitizeQ (lmfQv);
+            const float lmfQ_eff  = phase3WidenQForBoost (lmfQ_user, lmfG_eff);
+
+            const float hmfF_eff  = sanitizeHz (hmfF);
+            const float hmfG_user = sanitizeDb (hmfG);
+            const float hmfG_eff  = phase3ProtectBoostDb (phase3RestoreCutDb (hmfG_user));
+            const float hmfQ_user = sanitizeQ (hmfQv);
+            const float hmfQ_eff  = phase3WidenQForBoost (hmfQ_user, hmfG_eff);
+
+            phase3rLmfFreqHz     = lmfF_eff;
+            phase3rLmfQEff       = lmfQ_eff;
+            phase3rLmfGainEffDb  = lmfG_eff;
+            phase3rLmfGateOpen   = (lmfG_eff > 1.0f);
+
+            phase3rHmfFreqHz     = hmfF_eff;
+            phase3rHmfQEff       = hmfQ_eff;
+            phase3rHmfGainEffDb  = hmfG_eff;
+            phase3rHmfGateOpen   = (hmfG_eff > 1.0f);
+        }
+
+        // Phase 3R control-rate constants (derived from sr) — used by sample-loop processing
+        // Phase 3R control-rate constants (cached members for sample-loop use)
+        phase3rEnvA_fast = std::exp (-1.0f / ((float) sr * 0.010f)); // ~10ms
+        phase3rPersistDecay = std::exp (-1.0f / ((float) sr * 0.050f)); // ~50ms
+        phase3rAtkA = std::exp (-1.0f / ((float) sr * 0.100f)); // ~100ms
+        phase3rRelA = std::exp (-1.0f / ((float) sr * 1.000f)); // ~1s
+        phase3rDepthSlewPerSample = (1.0f / (float) sr); // 1 dB/s
+
+        // Determine if Phase 3R needs control-rate coefficient refresh (depth changes), even if no EQ params changed.
+        bool phase3rNeeds = false;
+        for (int ch = 0; ch < channels; ++ch)
+        {
+            const auto& sl = phase3rLmf[(size_t) ch];
+            const auto& sh = phase3rHmf[(size_t) ch];
+            if (std::fabs (sl.depthDb - sl.lastDepthDb) >= 0.02f || std::fabs (sh.depthDb - sh.lastDepthDb) >= 0.02f)
+            {
+                phase3rNeeds = true;
+                break;
+            }
+        }
+
+        // Early return must consider Phase 3R needs, otherwise suppression never engages unless user moves EQ knobs.
+        if (! (hpfChanged || lpfChanged || lfChanged || lmfChanged || hmfChanged || hfChanged) && ! phase3rNeeds)
             return;
 
         // update last values
@@ -623,8 +832,30 @@ private:
         if (hmfChanged) { lastHmfFreq = hmfF; lastHmfGainDb = hmfG; lastHmfQ = hmfQv; }
         if (hfChanged)  { lastHfFreq = hfF;   lastHfGainDb = hfG; }
 
-        // rebuild (pure math only)
-        rebuildAllBiquads();
+        // rebuild (pure math only) — only when EQ/filter params changed
+        if (hpfChanged || lpfChanged || lfChanged || lmfChanged || hmfChanged || hfChanged)
+            rebuildAllBiquads();
+
+        // Phase 3R control-rate coefficient updates (detectors + suppressor), no per-sample rebuilds.
+        // If only phase3rNeeds is true, we update only suppressor coefficients (depth-driven).
+        for (int ch = 0; ch < channels; ++ch)
+        {
+            // LMF
+            phase3rUpdateCoeffsForBand (phase3rLmf[(size_t) ch],
+                                       phase3rLmfFreqHz,
+                                       phase3rLmfQEff,
+                                       phase3rLmfGainEffDb,
+                                       phase3rLmfGateOpen,
+                                       /*forceSuppressorOnly*/ !(lmfChanged));
+
+            // HMF
+            phase3rUpdateCoeffsForBand (phase3rHmf[(size_t) ch],
+                                       phase3rHmfFreqHz,
+                                       phase3rHmfQEff,
+                                       phase3rHmfGainEffDb,
+                                       phase3rHmfGateOpen,
+                                       /*forceSuppressorOnly*/ !(hmfChanged));
+        }
     }
     bool pureMode = false;
 
@@ -663,6 +894,26 @@ private:
     // Phase 3R scaffold state (LMF/HMF only; wired later)
     std::vector<Phase3RBandState> phase3rLmf;
     std::vector<Phase3RBandState> phase3rHmf;
+
+    // Phase 3R cached control-rate values (avoid recomputing effective gain inside sample loop)
+    float phase3rLmfFreqHz = 1000.0f;
+    float phase3rLmfQEff   = 1.0f;
+    float phase3rLmfGainEffDb = 0.0f;
+    bool  phase3rLmfGateOpen  = false;
+
+    float phase3rHmfFreqHz = 4000.0f;
+    float phase3rHmfQEff   = 1.0f;
+    float phase3rHmfGainEffDb = 0.0f;
+    bool  phase3rHmfGateOpen  = false;
+
+    // Phase 3R cached control-rate constants (must be in scope for sample loop; no per-sample coeff rebuilds)
+    float phase3rEnvA_fast = 0.0f;
+    float phase3rPersistDecay = 0.0f;
+    float phase3rAtkA = 0.0f;
+    float phase3rRelA = 0.0f;
+    float phase3rDepthSlewPerSample = 0.0f;
+
+
     std::vector<Biquad> hfShelf;
     std::vector<Biquad> lpf2;
 
