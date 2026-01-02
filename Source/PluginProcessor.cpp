@@ -131,24 +131,8 @@ void CompassEQAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     // Phase 3: sync DSPCore pure-mode state once per block
     dspCore.setPureMode (pureModeOn);
 
-    if (bypassed && ! pureModeOn)
-    {
-        // Clear any output channels that don't have corresponding input channels
-        for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
-            buffer.clear(ch, 0, buffer.getNumSamples());
-
-        // Pass-through for channels we do have
-        const int n = juce::jmin(getTotalNumInputChannels(), getTotalNumOutputChannels());
-        for (int ch = 0; ch < n; ++ch)
-        {
-            // Copy in-place is safe even if host provides same buffer for in/out
-            auto* dst = buffer.getWritePointer(ch);
-            const auto* srcp = buffer.getReadPointer(ch);
-            if (dst != srcp)
-                std::memcpy(dst, srcp, (size_t) buffer.getNumSamples() * sizeof(float));
-        }
-        return;
-    }
+    // Hard bypass = DSP/EQ OFF, but we still run trim-only gain staging + meters.
+    const bool hardBypass = (bypassed && ! pureModeOn);
 
     // Input meter (post input-trim, pre-DSP): updates even when bypassed.
     const auto* inTrimParamMeter = apvts.getRawParameterValue (INPUT_TRIM_ID);
@@ -165,8 +149,30 @@ void CompassEQAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     const auto* outTrimParamMeter = apvts.getRawParameterValue (OUTPUT_TRIM_ID);
     const float outTrimDb   = outTrimParamMeter ? outTrimParamMeter->load() : 0.0f;
     const float outTrimGain = juce::Decibels::decibelsToGain (outTrimDb);
+
+    if (hardBypass)
+    {
+        // Clear any output channels that don't have corresponding input channels
+        for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
+            buffer.clear (ch, 0, buffer.getNumSamples());
+
+        // Pass-through for channels we do have
+        const int n = juce::jmin (getTotalNumInputChannels(), getTotalNumOutputChannels());
+        for (int ch = 0; ch < n; ++ch)
+        {
+            // Copy in-place is safe even if host provides same buffer for in/out
+            auto* dst = buffer.getWritePointer (ch);
+            const auto* srcp = buffer.getReadPointer (ch);
+            if (dst != srcp)
+                std::memcpy (dst, srcp, (size_t) buffer.getNumSamples() * sizeof(float));
+        }
+
+        // Trim-only gain staging (Input Trim then Output Trim). Linear gains can be combined.
+        buffer.applyGain (inTrimGain * outTrimGain);
+    }
     // Engine path (normal OR Pure Mode): always feed targets + run dspCore.
-    // Hard bypass (engine OFF) is handled above via the early return when (bypassed && !pureModeOn).
+    // Hard bypass: trim-only gain staging already applied above; skip DSP/EQ.
+    if (! hardBypass)
     {
         const auto* inTrimParam  = apvts.getRawParameterValue (INPUT_TRIM_ID);
         const auto* outTrimParam = apvts.getRawParameterValue (OUTPUT_TRIM_ID);
