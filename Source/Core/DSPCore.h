@@ -12,8 +12,52 @@ class DSPCore final
 public:
     DSPCore() = default;
 
+
+    // Forward declaration: Phase 4 members reference Biquad before its definition.
+    private:
+    struct Biquad;
+    public:
+
     // ===== Phase 4: Oversampling scaffold members (LMF only) =====
     std::unique_ptr<juce::dsp::Oversampling<float>> osLmf;
+    // ===== Phase 4 (LMF only): oversampling wiring support (members only; no process wiring in Step 4C) =====
+    static constexpr int kLmfXfadeSamples = 64;
+
+    std::vector<juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear>> lmfDryAlign;
+    float lmfOsLatencySamples = 0.0f;
+    std::vector<float> lmfXfade01;
+    std::vector<int>   lmfXfadePos;
+    bool  lmfOsEngaged    = false;
+    bool  lmfXfadeActive  = false;
+    float lmfXfadeStepPerSample = 0.0f;
+
+
+    
+    // ===== Phase 4F-B0/4F-B: LMF island buffers (prepare-only; NO allocations in process) =====
+    int lmfMaxBlock = 0;
+
+    std::vector<std::vector<float>> lmfPreBuf;        // pre-LMF (after LF shelf), [ch][i]
+    std::vector<std::vector<float>> lmfPostDryBuf;    // post-LMF dry (base-rate), [ch][i]
+    std::vector<std::vector<float>> lmfPostOsBuf;     // post-LMF OS (computed), [ch][i]
+    std::vector<float> outGCache;                     // per-sample out trim cache for Pass C (size = lmfMaxBlock)
+
+    // Pointer arrays for JUCE AudioBlock construction (prepare-sized; assigned per block; NO alloc in process)
+    std::vector<const float*> lmfInPtrs;
+    std::vector<float*>       lmfOsPtrs;
+
+    // OS-rate LMF peak biquad state (separate from base-rate lmfPeak)
+    std::vector<Biquad> lmfPeakOs;
+    // Step 4D: engage decision uses existing Phase 3 threshold behavior (no new constants)
+    inline bool shouldEngageLmfOs() const noexcept
+    {
+        // Use the same gain signal path Phase 3 uses (user gain -> cut restore -> boost protect).
+        // Engage OS iff Phase 3 would modify the gain due to extreme boost/cut.
+        const float gUser = sanitizeDb ((float) lmfGainDbSm.getCurrentValue());
+        const float gCut  = phase3RestoreCutDb (gUser);
+        const float gProt = phase3ProtectBoostDb (gCut);
+        return (gCut != gUser) || (gProt != gCut);
+    }
+
     size_t osLmfChannels = 0;
 
 
@@ -116,15 +160,76 @@ public:
         if (osLmf != nullptr)
         {
             osLmf->initProcessing ((size_t) juce::jmax (1, samplesPerBlock));
+            // Step 4B guardrail: only read latency if osLmf exists
+            lmfOsLatencySamples = (float) osLmf->getLatencyInSamples();
             osLmf->reset();
         }
+        else
+        {
+            lmfOsLatencySamples = 0.0f;
+        }
 
-        reset();
+        // Step 4C: allocate/resize LMF-only alignment + xfade state in prepare() (no process wiring yet)
+        lmfDryAlign.resize ((size_t) channels);
+        lmfXfade01.assign ((size_t) channels, lmfOsEngaged ? 1.0f : 0.0f);
+        lmfXfadePos.assign ((size_t) channels, lmfOsEngaged ? 63 : 0);
+        lmfXfadeActive = false;
+        lmfXfadeStepPerSample = 1.0f / 64.0f;
+
+        juce::dsp::ProcessSpec drySpec;
+        drySpec.sampleRate = (double) sr;
+        drySpec.maximumBlockSize = (juce::uint32) juce::jmax (1, samplesPerBlock);
+        drySpec.numChannels = 1;
+        for (auto& d : lmfDryAlign)
+        {
+            d.prepare (drySpec);
+            d.setDelay (lmfOsLatencySamples);
+            d.reset();
+        }
+
+        
+        // ===== Phase 4F-B0/4F-B: allocate LMF island buffers (prepare-only) =====
+        lmfMaxBlock = juce::jmax(1, samplesPerBlock);
+
+        lmfPreBuf.resize((size_t) channels);
+        lmfPostDryBuf.resize((size_t) channels);
+        lmfPostOsBuf.resize((size_t) channels);
+
+        for (int ch = 0; ch < channels; ++ch)
+        {
+            lmfPreBuf[(size_t) ch].assign((size_t) lmfMaxBlock, 0.0f);
+            lmfPostDryBuf[(size_t) ch].assign((size_t) lmfMaxBlock, 0.0f);
+            lmfPostOsBuf[(size_t) ch].assign((size_t) lmfMaxBlock, 0.0f);
+        }
+
+        outGCache.assign((size_t) lmfMaxBlock, 1.0f);
+
+        lmfInPtrs.assign((size_t) channels, nullptr);
+        lmfOsPtrs.assign((size_t) channels, nullptr);
+
+        lmfPeakOs.assign((size_t) channels, Biquad{});
+reset();
     }
 
     inline void reset() noexcept
     {
         pureMode = false; // Phase 3C: lifecycle safety (reset)
+        // Step 4C: reset LMF-only alignment + stable xfade state (no ramping)
+        for (auto& d : lmfDryAlign)
+            d.reset();
+        for (auto& b : lmfPeakOs) b.reset();
+
+        // Zero LMF island buffers + cache (no allocations)
+        for (auto& v : lmfPreBuf)      for (auto& s : v) s = 0.0f;
+        for (auto& v : lmfPostDryBuf)  for (auto& s : v) s = 0.0f;
+        for (auto& v : lmfPostOsBuf)   for (auto& s : v) s = 0.0f;
+        for (auto& g : outGCache)      g = 1.0f;
+        for (auto& v : lmfXfade01)
+            v = (lmfOsEngaged ? 1.0f : 0.0f);
+        for (auto& p : lmfXfadePos)
+            p = (lmfOsEngaged ? 63 : 0);
+        lmfXfadeActive = false;
+
         // Phase 4 Step 3 scaffold: OS state reset only (no processing use yet)
         if (osLmf != nullptr)
             osLmf->reset();
@@ -180,31 +285,37 @@ public:
         const int n   = buffer.getNumSamples();
         const int chs = juce::jmin (channels, buffer.getNumChannels());
 
-        for (int i = 0; i < n; ++i)
+        // ===== Phase 4E (LMF OS): engage decision + start/stop crossfade flag (NO audio-path wiring yet) =====
+        const bool wantOs = (osLmf != nullptr) && shouldEngageLmfOs();
+        if (wantOs != lmfOsEngaged)
         {
-            const float inG  = inTrimLin.getNextValue();
-            const float outG = outTrimLin.getNextValue();
+            lmfOsEngaged   = wantOs;
+            lmfXfadeActive = true;
 
-            if (pureMode)
+            // No allocations here. Containers must already be sized in prepare().
+            const int nCh = juce::jmax (1, chs);
+            if ((int) lmfXfadePos.size() >= nCh && (int) lmfXfade01.size() >= nCh)
             {
-                // Pure Mode (Phase 3A): trims only — skip smoothers + filters/EQ entirely
-                #if JUCE_DEBUG
+                for (int ch = 0; ch < nCh; ++ch)
                 {
-                    static bool  sLastPure = false;
-                    static float sLastInG  = -1.0f;
-                    static float sLastOutG = -1.0f;
-
-                    if (! sLastPure || inG != sLastInG || outG != sLastOutG)
-                    {
-                        DBG(juce::String("[DSPCore] PureMode trims: inG=") + juce::String(inG, 6)
-                            + " outG=" + juce::String(outG, 6)
-                            + " g=" + juce::String(inG * outG, 6));
-                        sLastPure = true;
-                        sLastInG  = inG;
-                        sLastOutG = outG;
-                    }
+                    lmfXfadePos[(size_t) ch] = wantOs ? 0 : (kLmfXfadeSamples - 1);
+                    lmfXfade01[(size_t) ch]  = wantOs ? 0.0f : 1.0f;
                 }
-                #endif
+            }
+            else
+            {
+                // Safety: if state wasn't prepared, do not attempt a transition.
+                lmfXfadeActive = false;
+            }
+        }
+        // ===== End Phase 4E (LMF OS) =====
+        // Pure Mode (Phase 3A): trims only — skip smoothers + filters/EQ entirely
+        if (pureMode)
+        {
+            for (int i = 0; i < n; ++i)
+            {
+                const float inG  = inTrimLin.getNextValue();
+                const float outG = outTrimLin.getNextValue();
 
                 const float g = inG * outG;
                 for (int ch = 0; ch < chs; ++ch)
@@ -212,8 +323,17 @@ public:
                     auto* d = buffer.getWritePointer (ch);
                     d[i] *= g;
                 }
-                continue;
             }
+            return;
+        }
+
+        // ===== Phase 4F-B0 Pass A: pre-LMF capture (cadence preserved; the ONLY place getNextValue + updateFiltersIfNeeded(i) runs) =====
+        for (int i = 0; i < n; ++i)
+        {
+            const float inG  = inTrimLin.getNextValue();
+            const float outG = outTrimLin.getNextValue();
+            if ((size_t) i < outGCache.size())
+                outGCache[(size_t) i] = outG;
 
             // advance smoothers (filters)
             hpfHzSm.getNextValue();
@@ -234,30 +354,181 @@ public:
             hfFreqSm.getNextValue();
             hfGainDbSm.getNextValue();
 
-            updateFiltersIfNeeded (i); // pure float math only
+            updateFiltersIfNeeded (i); // cadence preserved (exactly once per i)
 
             for (int ch = 0; ch < chs; ++ch)
             {
                 float x = buffer.getSample (ch, i);
 
-                // Input Trim
+                // Input Trim (applied exactly once here)
                 x *= inG;
 
                 // HPF 18 dB/oct = 12 dB biquad + 6 dB first-order
-                // True-off at endpoint: skip both HPF stages when inactive (control-rate flag)
                 if (hpfActive)
                 {
                     x = hpf2[(size_t) ch].process (x);
                     x = processFirstOrderHPF (ch, x);
                 }
 
-                // EQ Bands (fixed topology)
+                // EQ Bands: stop at pre-LMF
                 x = lfShelf[(size_t) ch].process (x);
+
+                // Store PRE-LMF
+                if ((size_t) ch < lmfPreBuf.size() && (size_t) i < lmfPreBuf[(size_t) ch].size())
+                    lmfPreBuf[(size_t) ch][(size_t) i] = x;
+            }
+        }
+
+        // ===== Phase 4F-B: Pass B LMF island (dry + OS chunk; NO allocations) =====
+        const bool lmfIslandOk =
+            (lmfMaxBlock >= n) &&
+            ((int) lmfPreBuf.size() >= chs) &&
+            ((int) lmfPostDryBuf.size() >= chs) &&
+            ((int) lmfPostOsBuf.size() >= chs) &&
+            ((int) outGCache.size() >= n) &&
+            ((int) lmfInPtrs.size() >= chs) &&
+            ((int) lmfOsPtrs.size() >= chs) &&
+            ((int) lmfPeakOs.size() >= chs);
+
+        bool computeOs = lmfIslandOk && (osLmf != nullptr) && (osLmfChannels == (size_t) chs) && (lmfOsEngaged || lmfXfadeActive);
+
+        for (int ch = 0; ch < chs; ++ch)
+        {
+            for (int i = 0; i < n; ++i)
+            {
+                float x = ((size_t) ch < lmfPreBuf.size() && (size_t) i < lmfPreBuf[(size_t) ch].size())
+                            ? lmfPreBuf[(size_t) ch][(size_t) i]
+                            : 0.0f;
+
                 x = lmfPeak[(size_t) ch].process (x);
-                // Phase 3R (LMF) — post-band wiring ONLY (contract)
+
+                if ((size_t) ch < lmfPostDryBuf.size() && (size_t) i < lmfPostDryBuf[(size_t) ch].size())
+                    lmfPostDryBuf[(size_t) ch][(size_t) i] = x;
+            }
+        }
+
+        if (computeOs && n > 0)
+        {
+            const float lmfHz = sanitizeHz ((float) lmfFreqSm.getCurrentValue());
+            const float lmfQ  = juce::jmax (0.05f, (float) lmfQSm.getCurrentValue());
+            const float lmfDb = sanitizeDb ((float) lmfGainDbSm.getCurrentValue());
+            const float osSr  = (float) (sr * 2.0);
+
+            for (int ch = 0; ch < chs; ++ch)
+            {
+                lmfInPtrs[(size_t) ch] = lmfPreBuf[(size_t) ch].data();
+                lmfOsPtrs[(size_t) ch] = lmfPostOsBuf[(size_t) ch].data();
+                setPeakEqCoeffsOsRate(lmfPeakOs[(size_t) ch], osSr, lmfHz, lmfQ, lmfDb);
+            }
+
+            juce::dsp::AudioBlock<const float> inBlock(lmfInPtrs.data(), (size_t) chs, (size_t) n);
+            juce::dsp::AudioBlock<float> outBlock(lmfOsPtrs.data(), (size_t) chs, (size_t) n);
+
+            auto upBlock = osLmf->processSamplesUp(inBlock);
+            const int upN = (int) upBlock.getNumSamples();
+
+            for (int ch = 0; ch < chs; ++ch)
+            {
+                auto* up = upBlock.getChannelPointer((size_t) ch);
+                for (int k = 0; k < upN; ++k)
+                    up[k] = lmfPeakOs[(size_t) ch].process(up[k]);
+            }
+
+            osLmf->processSamplesDown(outBlock);
+        }
+        else
+        {
+            for (int ch = 0; ch < chs; ++ch)
+            {
+                for (int i = 0; i < n; ++i)
+                {
+                    const float x = ((size_t) ch < lmfPostDryBuf.size() && (size_t) i < lmfPostDryBuf[(size_t) ch].size())
+                                      ? lmfPostDryBuf[(size_t) ch][(size_t) i]
+                                      : 0.0f;
+
+                    if ((size_t) ch < lmfPostOsBuf.size() && (size_t) i < lmfPostOsBuf[(size_t) ch].size())
+                        lmfPostOsBuf[(size_t) ch][(size_t) i] = x;
+                }
+            }
+        }
+
+        // ===== Phase 4F-B0 Pass C: post-LMF continuation + 4F-A state/select (NO lmfPeak.process here) =====
+        for (int i = 0; i < n; ++i)
+        {
+            const float outG = ((size_t) i < outGCache.size() ? outGCache[(size_t) i] : 1.0f);
+
+            for (int ch = 0; ch < chs; ++ch)
+            {
+                const float lmfDryOut =
+                    ((size_t) ch < lmfPostDryBuf.size() && (size_t) i < lmfPostDryBuf[(size_t) ch].size())
+                        ? lmfPostDryBuf[(size_t) ch][(size_t) i]
+                        : 0.0f;
+
+                const float lmfOsReal =
+                    ((size_t) ch < lmfPostOsBuf.size() && (size_t) i < lmfPostOsBuf[(size_t) ch].size())
+                        ? lmfPostOsBuf[(size_t) ch][(size_t) i]
+                        : lmfDryOut;
+                (void) lmfOsReal;
+
+                float x = 0.0f;
+
+                // ===== Phase 4F-A (LMF OS): ramp + dry-align + blend scaffold (STATE/SELECT ONLY) =====
+                if ((size_t) ch < lmfDryAlign.size())
+                    lmfDryAlign[(size_t) ch].pushSample (0, lmfDryOut);
+
+                float dryAlignedLMF = lmfDryOut;
+                if ((size_t) ch < lmfDryAlign.size())
+                    dryAlignedLMF = lmfDryAlign[(size_t) ch].popSample (0);
+                const float lmfOsOut = (lmfOsEngaged ? lmfOsReal : lmfDryOut);
+                float lmfX = 0.0f;
+
+                if ((size_t) ch < lmfXfadePos.size())
+                {
+                    const int last = (kLmfXfadeSamples - 1);
+                    int p = lmfXfadePos[(size_t) ch];
+
+                    if (lmfXfadeActive)
+                    {
+                        if (lmfOsEngaged) { if (p < last) ++p; }
+                        else              { if (p > 0) --p; }
+                        lmfXfadePos[(size_t) ch] = p;
+                    }
+
+                    lmfX = (last > 0) ? ((float) p / (float) last) : 0.0f;
+                    if ((size_t) ch < lmfXfade01.size())
+                        lmfXfade01[(size_t) ch] = lmfX;
+
+                    if (lmfXfadeActive && (ch == (chs - 1)))
+                    {
+                        bool allDone = true;
+                        const int nCh = juce::jmax (1, chs);
+                        if ((int) lmfXfadePos.size() >= nCh)
+                        {
+                            const int wantTerminal = (lmfOsEngaged ? last : 0);
+                            for (int c = 0; c < nCh; ++c)
+                            {
+                                if (lmfXfadePos[(size_t) c] != wantTerminal) { allDone = false; break; }
+                            }
+                            if (allDone)
+                            {
+                                lmfXfadeActive = false;
+                                if ((int) lmfXfade01.size() >= nCh)
+                                {
+                                    const float xTerm = (lmfOsEngaged ? 1.0f : 0.0f);
+                                    for (int c = 0; c < nCh; ++c)
+                                        lmfXfade01[(size_t) c] = xTerm;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (lmfXfadeActive) x = dryAlignedLMF + (lmfOsOut - dryAlignedLMF) * lmfX;
+                else               x = lmfOsOut;
+                // ===== End Phase 4F-A (LMF OS) =====
+
                 if (phase3rLmfGateOpen)
                 {
-                    // Precomputed control-rate constants
                     const float envA = phase3rEnvA_fast;
                     const float envB = (1.0f - envA);
                     x = phase3rProcessSample (phase3rLmf[(size_t) ch], x,
@@ -269,7 +540,7 @@ public:
                 }
 
                 x = hmfPeak[(size_t) ch].process (x);
-                // Phase 3R (HMF) — post-band wiring ONLY (contract)
+
                 if (phase3rHmfGateOpen)
                 {
                     const float envA = phase3rEnvA_fast;
@@ -284,17 +555,15 @@ public:
 
                 x = hfShelf[(size_t) ch].process (x);
 
-                // LPF 12 dB/oct biquad
-                // True-off at endpoint: skip LPF when inactive (control-rate flag)
                 if (lpfActive)
                     x = lpf2[(size_t) ch].process (x);
 
-                // Output Trim
                 x *= outG;
 
                 buffer.setSample (ch, i, x);
             }
         }
+
     }
 
 private:
@@ -318,6 +587,36 @@ private:
             return y;
         }
     };
+
+
+    // ===== Phase 4F-B: OS-rate biquad coefficient helper (LMF peak only) =====
+    // Used ONLY for lmfPeakOs (oversampled-rate processing). Base-rate path remains unchanged.
+    static inline void setPeakEqCoeffsOsRate(Biquad& b, float sampleRate, float freqHz, float Q, float gainDb) noexcept
+    {
+        const float sr = (sampleRate > 1.0f ? sampleRate : 44100.0f);
+        const float f  = juce::jlimit(10.0f, 0.49f * sr, freqHz);
+        const float q  = juce::jmax(0.05f, Q);
+        const float A  = std::pow(10.0f, gainDb / 40.0f);
+
+        const float w0 = 2.0f * (float)juce::MathConstants<double>::pi * (f / sr);
+        const float cw = std::cos(w0);
+        const float sw = std::sin(w0);
+        const float alpha = sw / (2.0f * q);
+
+        const float b0 = 1.0f + alpha * A;
+        const float b1 = -2.0f * cw;
+        const float b2 = 1.0f - alpha * A;
+        const float a0 = 1.0f + alpha / A;
+        const float a1 = -2.0f * cw;
+        const float a2 = 1.0f - alpha / A;
+
+        const float invA0 = (a0 != 0.0f ? 1.0f / a0 : 1.0f);
+        b.b0 = b0 * invA0;
+        b.b1 = b1 * invA0;
+        b.b2 = b2 * invA0;
+        b.a1 = a1 * invA0;
+        b.a2 = a2 * invA0;
+    }
 
     // ===== Mini-Phase 3R: Band-Local Resonance Suppression (Scaffold Only; no audio-path wiring) =====
     // IMPORTANT (Contract):
