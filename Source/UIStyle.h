@@ -172,7 +172,10 @@ namespace UIStyle
         inline juce::Font makeUiSans (float height, int styleFlags)
         {
            #if JUCE_MAC
+            #pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
             return juce::Font ("Helvetica Neue", height, styleFlags);
+#pragma clang diagnostic pop
            #else
             return juce::Font ("Arial", height, styleFlags);
            #endif

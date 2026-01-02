@@ -37,7 +37,7 @@ private:
     {
     public:
         MeterComponent (CompassEQAudioProcessor& p, bool isInputMeter, CompassEQAudioProcessorEditor& e)
-            : proc (p), isInput (isInputMeter), editor (e)
+            : proc (p), editor (e), isInput (isInputMeter)
         {
             startTimerHz (30);
         }
@@ -117,7 +117,7 @@ private:
             constexpr int kDots   = 23;
             constexpr int kGreen  = 16;
             constexpr int kYellow = 5;
-            constexpr int kRed    = 2;
+            [[maybe_unused]] constexpr int kRed    = 2;
 
             const float v01 = juce::jlimit (0.0f, 1.0f, last01);
             const int litDots = juce::jlimit (0, kDots, (int) std::lround (v01 * (float) kDots));

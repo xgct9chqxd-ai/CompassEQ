@@ -17,7 +17,7 @@ namespace
         float radius = 6.0f;
         int insetPx = 0; // optional: shrink rect for visual breathing
     };
-    static inline void drawPlate(juce::Graphics &g, juce::Rectangle<int> r, PlateStyle s)
+    [[maybe_unused]] static inline void drawPlate(juce::Graphics &g, juce::Rectangle<int> r, PlateStyle s)
     {
         if (r.isEmpty())
             return;
@@ -29,7 +29,7 @@ namespace
         g.setColour(UIStyle::Colors::foreground.withAlpha(s.strokeA));
         g.drawRoundedRectangle(rf, s.radius, s.strokeW);
     }
-    static inline juce::Rectangle<int> fullWidthFrom(juce::Rectangle<int> editor, juce::Rectangle<int> zone, int inset)
+    [[maybe_unused]] static inline juce::Rectangle<int> fullWidthFrom(juce::Rectangle<int> editor, juce::Rectangle<int> zone, int inset)
     {
         // "Derived from slots": we take Y/H from the slot zone, and X/W from the editor bounds.
         if (zone.isEmpty() || editor.isEmpty())
@@ -174,7 +174,7 @@ namespace
         return juce::Colour::fromFloatRGBA(outR, outG, outB, 1.0f);
     }
     // Stage 1 knob source lock: use knob base color constant (sole source).
-    static inline juce::Colour stage1_sectionBgFromKnobBase()
+    [[maybe_unused]] static inline juce::Colour stage1_sectionBgFromKnobBase()
     {
         return stage1_knobToSectionBg_OkLabLinear(UIStyle::Colors::knobBody);
     }
@@ -204,13 +204,13 @@ namespace
         // Slight luminance separation between bands (subtle; saturation does the heavy lifting).
         // These are ΔL* in OKLab-L* (0..100) space, applied only to band lanes.
         float bandDeltaLstar = 0.0f;
-        if (hueDeg == UIStyle::Colors::bandHueLF)
+        if (juce::approximatelyEqual (hueDeg, UIStyle::Colors::bandHueLF))
             bandDeltaLstar = -2.0f; // LF anchor: heavier / quieter
-        else if (hueDeg == UIStyle::Colors::bandHueLMF)
+        else if (juce::approximatelyEqual (hueDeg, UIStyle::Colors::bandHueLMF))
             bandDeltaLstar = +0.5f;
-        else if (hueDeg == UIStyle::Colors::bandHueHMF)
+        else if (juce::approximatelyEqual (hueDeg, UIStyle::Colors::bandHueHMF))
             bandDeltaLstar = 0.0f;
-        else if (hueDeg == UIStyle::Colors::bandHueHF)
+        else if (juce::approximatelyEqual (hueDeg, UIStyle::Colors::bandHueHF))
             bandDeltaLstar = +1.0f;
         const float newL100 = juce::jlimit(0.0f, 100.0f, L100 + luminanceDeltaLstar + bandDeltaLstar);
         // Hue is locked from band constants (OKLCH hue degrees). "Saturation" is OKLCH chroma C.
@@ -230,7 +230,7 @@ namespace
     }
     // Stage 3: L* -> grayscale mapping (monotonic, grayscale only).
     // Note: We only need consistency + monotonicity for subtle ΔL* zoning (no hue/sat/texture).
-    static inline juce::Colour lstarToGray(float lstar)
+    [[maybe_unused]] static inline juce::Colour lstarToGray(float lstar)
     {
         const float clamped = juce::jlimit(0.0f, 100.0f, lstar);
         const int gray = juce::roundToInt(clamped * 2.55f); // linear 0..100 -> 0..255
@@ -239,7 +239,7 @@ namespace
     // STAGE 2 — LIGHTING INVARIANCE LOCK (Tier 2 only)
     // One lighting function. One highlight behavior. One occlusion behavior.
     // Apply uniformly to any Tier-2 faceplate geometry. Do not introduce per-zone lighting.
-    static void applyTier2LightingUniform(juce::Graphics &g, juce::Rectangle<int> r, float physicalScale)
+    [[maybe_unused]] static void applyTier2LightingUniform(juce::Graphics &g, juce::Rectangle<int> r, float physicalScale)
     {
         if (r.isEmpty())
             return;
@@ -282,6 +282,15 @@ namespace
         juce::Rectangle<int> meterOutRect,
         float physicalScale)
     {
+    // Phase 5A hygiene: silence unused layout parameters (no behavior change)
+    (void) zoneHeader;
+    (void) zoneFilters;
+    (void) zoneTrim;
+    (void) colLF;
+    (void) colLMF;
+    (void) colHMF;
+    (void) colHF;
+
         if (editor.isEmpty())
             return;
         // ===== Modern premium console panel (base) =====
@@ -478,7 +487,7 @@ namespace
             }
         }
     }
-    static void drawTier3Well(juce::Graphics &g, juce::Rectangle<int> knobBounds, float physicalScale)
+    [[maybe_unused]] static void drawTier3Well(juce::Graphics &g, juce::Rectangle<int> knobBounds, float physicalScale)
     {
         if (knobBounds.isEmpty())
             return;
@@ -680,7 +689,7 @@ namespace
             return cache[key];
         }
     };
-    static void drawSSLKnob(juce::Graphics &g, juce::Rectangle<float> b, float value01, float scaleKey, juce::Colour bandColour, float ringThicknessMul = 1.0f)
+    [[maybe_unused]] static void drawSSLKnob(juce::Graphics &g, juce::Rectangle<float> b, float value01, float scaleKey, juce::Colour bandColour, float ringThicknessMul = 1.0f)
     {
         if (b.isEmpty())
             return;
@@ -788,7 +797,7 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider(
     float sliderPos, float rotaryStartAngle, float rotaryEndAngle,
     juce::Slider &s)
 {
-    const float scaleKey = editor.getScaleKeyActive();
+    [[maybe_unused]] const float scaleKey = editor.getScaleKeyActive();
     auto bounds = juce::Rectangle<int>(x, y, width, height).toFloat().reduced(6.0f);
     if (bounds.isEmpty())
         return;
@@ -981,8 +990,7 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider(
     }
 }
 CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor(CompassEQAudioProcessor &p)
-    : juce::AudioProcessorEditor(&p), proc(p), apvts(proc.getAPVTS()), inputMeter(proc, true, *this), outputMeter(proc, false, *this), lookAndFeel(std::make_unique<CompassLookAndFeel>(*this)), valueReadout(*this)
-{
+    : juce::AudioProcessorEditor(&p), proc(p), apvts(proc.getAPVTS()), valueReadout(*this), inputMeter(proc, true, *this), outputMeter(proc, false, *this), lookAndFeel(std::make_unique<CompassLookAndFeel>(*this)){
     setResizable(false, false);
     setSize(kEditorW, kEditorH);
     // Phase 6: Configure knobs with parameter defaults for double-click reset
@@ -1036,7 +1044,7 @@ CompassEQAudioProcessorEditor::CompassEQAudioProcessorEditor(CompassEQAudioProce
             valueReadout.show();
             updateReadout(s);
         };
-        s.onValueChange = [this, updateReadout, &s]
+        s.onValueChange = [updateReadout, &s]
         {
             // Phase 6: Only update while actively dragging
             if (s.isMouseButtonDown())
@@ -1148,6 +1156,9 @@ CompassEQAudioProcessorEditor::~CompassEQAudioProcessorEditor()
 }
 void CompassEQAudioProcessorEditor::configureKnob(CompassSlider &s, const char *paramId, float defaultValue)
 {
+    // Phase 5A hygiene: silence unused parameter (no behavior change)
+    (void) paramId;
+
     s.setSliderStyle(juce::Slider::RotaryVerticalDrag);
     // Correct standard pro EQ arc: min ~8 o'clock, neutral 12 o'clock straight up, max ~4 o'clock
         s.setRotaryParameters(
@@ -1219,9 +1230,9 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
     // Phase 3 Fix: scaleKey and physicalScale are passed as parameters (from paint() or handleAsyncUpdate())
     // This ensures cache rebuild uses the same physicalScale that paint() observed
     // ===== PH9.4 — Paint hygiene ladder (no layout change) =====
-    constexpr float kTitleA = UIStyle::TextAlpha::title;
-    constexpr float kHeaderA = UIStyle::TextAlpha::header;
-    constexpr float kMicroA = UIStyle::TextAlpha::micro;
+    [[maybe_unused]] constexpr float kTitleA = UIStyle::TextAlpha::title;
+    [[maybe_unused]] constexpr float kHeaderA = UIStyle::TextAlpha::header;
+    [[maybe_unused]] constexpr float kMicroA = UIStyle::TextAlpha::micro;
     constexpr float kTickA = UIStyle::TextAlpha::tick;
     const auto editor = getLocalBounds();
     ensureBackgroundNoiseTile();
@@ -1293,7 +1304,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
     }
     // ---- Keep your existing Phase 3.3 text system (headers/legends/ticks) ----
     // Phase 2: Discrete font ladder by scaleKey
-    const auto &titleFont = UIStyle::FontLadder::titleFont(scaleKey);
+    [[maybe_unused]] const auto &titleFont = UIStyle::FontLadder::titleFont(scaleKey);
     const auto &headerFont = UIStyle::FontLadder::headerFont(scaleKey);
     const auto &microFont = UIStyle::FontLadder::microFont(scaleKey);
     const float hairlineStroke = UIStyle::StrokeLadder::hairlineStroke(scaleKey);
@@ -1352,7 +1363,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
         drawEngravedFitted(txt, b.getX(), (int)snappedY, b.getWidth(), 12,
                            juce::Justification::centred, 1, kLegendA, juce::Colours::white.withAlpha(0.86f));
     };
-    auto drawTick = [&g, kTickA, physicalScale, hairlineStroke](juce::Rectangle<int> b, int yOffset)
+    auto drawTick = [&g, physicalScale, hairlineStroke](juce::Rectangle<int> b, int yOffset)
     {
         const float cx = UIStyle::Snap::snapPx((float)b.getCentreX(), physicalScale);
         const float y0 = UIStyle::Snap::snapPx((float)(b.getY() + yOffset), physicalScale);
@@ -1400,7 +1411,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
             return juce::Rectangle<int>(knobB.getX(), y, knobB.getWidth(), labelH);
         };
         // Collision guard vs BYPASS: reduce gap, then reduce font size one step (trim labels only).
-        bool reduceFont = false;
+        [[maybe_unused]] bool reduceFont = false;
         auto f = headerFont.withHeight(12.0f).withExtraKerningFactor(0.04f);
         auto inLabel = makeLabelRect(inTrim.getBounds(), labelGap, f);
         auto outLabel = makeLabelRect(outTrim.getBounds(), labelGap, f);
@@ -1850,7 +1861,10 @@ void CompassEQAudioProcessorEditor::paintOverChildren (juce::Graphics& g)
         g.fillEllipse (ledX, ledY, ledR * 2.0f, ledR * 2.0f);
 
         g.setColour (juce::Colour (0xFF1E90FF).withAlpha (0.95f));
+        #pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         g.setFont (juce::Font (10.0f, juce::Font::bold));
+#pragma clang diagnostic pop
         g.drawText ("PURE",
                     (int) (ledX + ledR * 2.0f + 6.0f), (int) (ring.getY()),
                     (int) (ring.getWidth() - 24.0f), (int) (ring.getHeight()),
@@ -1934,8 +1948,8 @@ void CompassEQAudioProcessorEditor::resized()
     const int z2H = 72;
     const int z3Y = z2Y + z2H;
     const int z3H = 240;
-    const int z4Y = z3Y + z3H;
-    const int z4H = 84;
+    [[maybe_unused]] const int z4Y = z3Y + z3H;
+    [[maybe_unused]] const int z4H = 84;
     // ----- Zone 1: Header (meters) -----
     // ===== PH9.3 — Bottom-anchored meters (bottom -> mid) =====
     {
@@ -2024,7 +2038,7 @@ void CompassEQAudioProcessorEditor::resized()
     // STAGE 5.8 — EXPAND BAND SPAN TO METERS (LOCKED)
     // Re-run the equal-width lane solver using meter-derived span, then recenter all band stacks.
     {
-        constexpr int g = 8; // must match assetSlots expansion grid
+        [[maybe_unused]] constexpr int g = 8; // must match assetSlots expansion grid
         const auto editor = getLocalBounds();
         const auto colLFRect = lfFreq.getBounds().getUnion(lfGain.getBounds());
         const auto colLMFRect = lmfFreq.getBounds().getUnion(lmfGain.getBounds()).getUnion(lmfQ.getBounds());
@@ -2032,7 +2046,7 @@ void CompassEQAudioProcessorEditor::resized()
         const auto colHFRect = hfFreq.getBounds().getUnion(hfGain.getBounds());
         const auto bandsUnion =
             colLFRect.getUnion(colLMFRect).getUnion(colHMFRect).getUnion(colHFRect);
-        const auto bandsZoneRect = bandsUnion.expanded(g * 2, g * 2).getIntersection(editor);
+        [[maybe_unused]] const auto bandsZoneRect = bandsUnion.expanded(g * 2, g * 2).getIntersection(editor);
         constexpr float meterGap = 10.0f; // LOCKED
         const float bandsSpanLeft = (float)inputMeter.getBounds().getRight() + meterGap;
         const float bandsSpanRight = (float)outputMeter.getBounds().getX() - meterGap;
@@ -2102,7 +2116,7 @@ void CompassEQAudioProcessorEditor::resized()
     // ----- Zone 4: Trim + Bypass -----
     // ===== PH9.4 — Zone 4: Center BYPASS + symmetric trims =====
     {
-        constexpr int g = 8;
+        [[maybe_unused]] constexpr int g = 8;
         // Re-derive Zone 4 from editor bounds (no floats, deterministic)
         auto editor = getLocalBounds();
         auto zone4 = editor.removeFromBottom(84).reduced(24, 0); // Zone 4 height per freeze spec
@@ -2126,7 +2140,7 @@ void CompassEQAudioProcessorEditor::resized()
     }
     // ===== Phase 4.0 — Asset Slot Map (derived from existing bounds) =====
     {
-        constexpr int g = 8;
+        [[maybe_unused]] constexpr int g = 8;
         assetSlots = {}; // reset
         assetSlots.editor = getLocalBounds();
         // Exact component bounds
