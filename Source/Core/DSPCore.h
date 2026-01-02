@@ -446,20 +446,41 @@ reset();
             osLmf->processSamplesDown(outBlock);
         }
         else
-        {
-            for (int ch = 0; ch < chs; ++ch)
-            {
-                for (int i = 0; i < n; ++i)
-                {
-                    const float x = ((size_t) ch < lmfPostDryBuf.size() && (size_t) i < lmfPostDryBuf[(size_t) ch].size())
-                                      ? lmfPostDryBuf[(size_t) ch][(size_t) i]
-                                      : 0.0f;
+{
+    for (int ch = 0; ch < chs; ++ch)
+    {
+        // Phase 6: hoist bounds checks / indexing out of the inner sample loop (behavior-identical)
+        const size_t chZ = (size_t) ch;
 
-                    if ((size_t) ch < lmfPostOsBuf.size() && (size_t) i < lmfPostOsBuf[(size_t) ch].size())
-                        lmfPostOsBuf[(size_t) ch][(size_t) i] = x;
-                }
-            }
+        const float* drySrc = nullptr;
+        size_t dryN = 0;
+        if (chZ < lmfPostDryBuf.size())
+        {
+            const auto& dry = lmfPostDryBuf[chZ];
+            drySrc = dry.data();
+            dryN = dry.size();
         }
+
+        float* osDst = nullptr;
+        size_t osN = 0;
+        if (chZ < lmfPostOsBuf.size())
+        {
+            auto& osb = lmfPostOsBuf[chZ];
+            osDst = osb.data();
+            osN = osb.size();
+        }
+
+        for (int i = 0; i < n; ++i)
+        {
+            const size_t iZ = (size_t) i;
+
+            const float x = (iZ < dryN && drySrc != nullptr) ? drySrc[iZ] : 0.0f;
+
+            if (iZ < osN && osDst != nullptr)
+                osDst[iZ] = x;
+        }
+    }
+}
 
         // ===== Phase 4F-B0 Pass C: post-LMF continuation + 4F-A state/select (NO lmfPeak.process here) =====
         for (int i = 0; i < n; ++i)
