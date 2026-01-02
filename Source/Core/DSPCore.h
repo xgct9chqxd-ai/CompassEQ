@@ -1,7 +1,9 @@
 #pragma once
 #include <JuceHeader.h>
+#include <juce_dsp/juce_dsp.h>
 #include <vector>
 #include <cmath>
+#include <memory>
 
 namespace compass
 {
@@ -10,11 +12,36 @@ class DSPCore final
 public:
     DSPCore() = default;
 
+    // ===== Phase 4: Oversampling scaffold members (LMF only) =====
+    std::unique_ptr<juce::dsp::Oversampling<float>> osLmf;
+    size_t osLmfChannels = 0;
+
+
 
     // ===== Phase 3: Pure Mode bridge (internal; not a parameter) =====
+    // ===== Phase 4: Oversampling scaffold (LMF only; infrastructure only) =====
+    // Allocation is forbidden in DSPCore::prepare/process. Call this from a known
+    // non-audio-thread lifecycle path (e.g., AudioProcessor::prepareToPlay).
+    inline void initOversampling (int numChannels)
+    {
+        const size_t ch = (size_t) juce::jmax (1, numChannels);
+        if (osLmf != nullptr && osLmfChannels == ch)
+            return;
+
+        // Allocate outside DSPCore::prepare/process (Phase 4 rule).
+        osLmf = std::make_unique<juce::dsp::Oversampling<float>>(
+            ch,
+            (size_t) 1, // 2^1 = 2x (wiring happens in Step 4)
+            juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR,
+            true,  // max quality
+            true   // use integer latency (alignment wired later)
+        );
+        osLmfChannels = ch;
+    }
+
     inline void setPureMode (bool enabled) noexcept { pureMode = enabled; }
     inline bool getPureMode() const noexcept        { return pureMode; }
-    inline void prepare (double sampleRate, int /*samplesPerBlock*/, int numChannels)
+    inline void prepare (double sampleRate, int samplesPerBlock, int numChannels)
     {
         pureMode = false; // Phase 3C: lifecycle safety (prepare)
         sr = (sampleRate > 0.0 ? sampleRate : 44100.0);
@@ -85,12 +112,22 @@ public:
         updateFirstOrderHPF (hpfHzSm.getCurrentValue());
         rebuildAllBiquads();
 
+        // Phase 4 Step 3 scaffold: no allocation; only init/reset on pre-created OS
+        if (osLmf != nullptr)
+        {
+            osLmf->initProcessing ((size_t) juce::jmax (1, samplesPerBlock));
+            osLmf->reset();
+        }
+
         reset();
     }
 
     inline void reset() noexcept
     {
         pureMode = false; // Phase 3C: lifecycle safety (reset)
+        // Phase 4 Step 3 scaffold: OS state reset only (no processing use yet)
+        if (osLmf != nullptr)
+            osLmf->reset();
         for (auto& b : hpf2)    b.reset();
         for (auto& b : lfShelf) b.reset();
         for (auto& b : lmfPeak) b.reset();

@@ -56,6 +56,7 @@ target_sources(CompassEQ PRIVATE
 target_link_libraries(CompassEQ
     PRIVATE
         CompassResources                  # <-- This links your image
+        juce::juce_dsp
         juce::juce_audio_utils
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags

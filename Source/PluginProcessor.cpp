@@ -98,6 +98,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout CompassEQAudioProcessor::cre
 
 void CompassEQAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
+    // Phase 4 Step 3 scaffold: allocate oversampling outside DSPCore::prepare/process
+    dspCore.initOversampling (getTotalNumInputChannels());
     dspCore.prepare (sampleRate, samplesPerBlock, getTotalNumInputChannels());
 
     inMeter01.store (0.0f, std::memory_order_relaxed);
