@@ -801,10 +801,10 @@ private:
         // Phase 3R control-rate constants (derived from sr) — used by sample-loop processing
         // Phase 3R control-rate constants (cached members for sample-loop use)
         phase3rEnvA_fast = std::exp (-1.0f / ((float) sr * 0.010f)); // ~10ms
-        phase3rPersistDecay = std::exp (-1.0f / ((float) sr * 0.050f)); // ~50ms
-        phase3rAtkA = std::exp (-1.0f / ((float) sr * 0.100f)); // ~100ms
-        phase3rRelA = std::exp (-1.0f / ((float) sr * 1.000f)); // ~1s
-        phase3rDepthSlewPerSample = (1.0f / (float) sr); // 1 dB/s
+        phase3rPersistDecay = std::exp (-1.0f / ((float) sr * 0.020f)); // ~20ms
+        phase3rAtkA = std::exp (-1.0f / ((float) sr * 0.020f)); // ~20ms
+        phase3rRelA = std::exp (-1.0f / ((float) sr * 0.800f)); // ~800ms
+        phase3rDepthSlewPerSample = (10.0f / (float) sr); // 10 dB/s
 
         // Determine if Phase 3R needs control-rate coefficient refresh (depth changes), even if no EQ params changed.
         bool phase3rNeeds = false;
