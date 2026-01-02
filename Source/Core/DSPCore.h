@@ -207,8 +207,12 @@ public:
                 x *= inG;
 
                 // HPF 18 dB/oct = 12 dB biquad + 6 dB first-order
-                x = hpf2[(size_t) ch].process (x);
-                x = processFirstOrderHPF (ch, x);
+                // True-off at endpoint: skip both HPF stages when inactive (control-rate flag)
+                if (hpfActive)
+                {
+                    x = hpf2[(size_t) ch].process (x);
+                    x = processFirstOrderHPF (ch, x);
+                }
 
                 // EQ Bands (fixed topology)
                 x = lfShelf[(size_t) ch].process (x);
@@ -244,7 +248,9 @@ public:
                 x = hfShelf[(size_t) ch].process (x);
 
                 // LPF 12 dB/oct biquad
-                x = lpf2[(size_t) ch].process (x);
+                // True-off at endpoint: skip LPF when inactive (control-rate flag)
+                if (lpfActive)
+                    x = lpf2[(size_t) ch].process (x);
 
                 // Output Trim
                 x *= outG;
@@ -750,6 +756,44 @@ private:
         const float hpfNow = hpfHzSm.getCurrentValue();
         const float lpfNow = lpfHzSm.getCurrentValue();
 
+        // HPF/LPF true-off at endpoints (control-rate flags; no new params/UI)
+        // Derive activity from sanitized Hz to match actual DSP behavior (sanitizeHz clamps).
+        const float hpfHz = sanitizeHz (hpfNow);
+        const float lpfHz = sanitizeHz (lpfNow);
+
+        // Off endpoints come from current mapping/init values:
+        //   HPF off at 20 Hz, LPF off at 20000 Hz
+        // eps = tolerance for smoothed endpoint / float noise
+        constexpr float kHpfOffHz = 20.0f;
+        constexpr float kLpfOffHz = 20000.0f;
+        constexpr float kHpfEpsHz = 0.01f;
+        constexpr float kLpfEpsHz = 1.0f;
+
+        const bool newHpfActive = (hpfHz > (kHpfOffHz + kHpfEpsHz));
+        const bool newLpfActive = (lpfHz < (kLpfOffHz - kLpfEpsHz));
+
+        // Reset states only on transition (active -> inactive), not continuously.
+        if (lastHpfActive && ! newHpfActive)
+        {
+            for (int ch = 0; ch < channels; ++ch)
+            {
+                hpf2[(size_t) ch].reset();
+                hp1_x1[(size_t) ch] = 0.0f;
+                hp1_y1[(size_t) ch] = 0.0f;
+            }
+        }
+
+        if (lastLpfActive && ! newLpfActive)
+        {
+            for (int ch = 0; ch < channels; ++ch)
+                lpf2[(size_t) ch].reset();
+        }
+
+        hpfActive = newHpfActive;
+        lpfActive = newLpfActive;
+        lastHpfActive = newHpfActive;
+        lastLpfActive = newLpfActive;
+
         const float lfF = lfFreqSm.getCurrentValue();
         const float lfG = lfGainDbSm.getCurrentValue();
 
@@ -869,6 +913,12 @@ private:
     juce::SmoothedValue<float> outTrimLin;
     juce::SmoothedValue<float> hpfHzSm;
     juce::SmoothedValue<float> lpfHzSm;
+
+    // HPF/LPF true-off flags (computed at control-rate; used in sample loop to skip processing)
+    bool hpfActive = true;
+    bool lpfActive = true;
+    bool lastHpfActive = true;
+    bool lastLpfActive = true;
 
     // band smoothers
     juce::SmoothedValue<float> lfFreqSm;
