@@ -145,7 +145,12 @@ void CompassEQAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     const float inTrimDb   = inTrimParamMeter ? inTrimParamMeter->load() : 0.0f;
     const float inTrimGain = juce::Decibels::decibelsToGain (inTrimDb);
 
-    const float in01 = juce::jlimit (0.0f, 1.0f, inPeak * inTrimGain);
+    // Meter calibration: map dBFS into 0..1 so typical program level sits around mid.
+        // Range: -36 dBFS -> 0.0, 0 dBFS -> 1.0  (so -18 dBFS ≈ 0.5)
+        constexpr float kMeterMinDb = -36.0f;
+        const float inDisplay = inPeak * inTrimGain;
+        const float inDb = juce::Decibels::gainToDecibels (inDisplay, -80.0f);
+        const float in01 = juce::jlimit (0.0f, 1.0f, (inDb - kMeterMinDb) / (0.0f - kMeterMinDb));
     inMeter01.store (in01, std::memory_order_relaxed);
     // If bypassed, keep gain staging active (Input/Output Trim) while skipping DSP/EQ.
     const auto* outTrimParamMeter = apvts.getRawParameterValue (OUTPUT_TRIM_ID);
@@ -242,7 +247,13 @@ void CompassEQAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     for (int ch = 0; ch < getTotalNumOutputChannels(); ++ch)
         outPeak = juce::jmax (outPeak, buffer.getMagnitude (ch, 0, buffer.getNumSamples()));
 
-    const float out01 = juce::jlimit (0.0f, 1.0f, outPeak);
+    // Meter calibration: map dBFS into 0..1 so typical program level sits around mid.
+        // Range: -36 dBFS -> 0.0, 0 dBFS -> 1.0  (so -18 dBFS ≈ 0.5)
+        
+        // In hard bypass, DSP path is skipped; include outTrimGain in the meter display path.
+        const float outDisplay = hardBypass ? (outPeak * outTrimGain) : outPeak;
+        const float outDb = juce::Decibels::gainToDecibels (outDisplay, -80.0f);
+        const float out01 = juce::jlimit (0.0f, 1.0f, (outDb - kMeterMinDb) / (0.0f - kMeterMinDb));
     outMeter01.store (out01, std::memory_order_relaxed);
 }
 

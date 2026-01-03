@@ -259,7 +259,8 @@ private:
     private:
         void timerCallback() override
         {
-            const float v = isInput ? proc.getInputMeter01() : proc.getOutputMeter01();
+            const float vRaw = isInput ? proc.getInputMeter01() : proc.getOutputMeter01();
+            const float v = (vRaw <= 0.0f) ? 0.0f : juce::jlimit(0.0f, 1.0f, std::sqrt(vRaw));
             last01 = juce::jlimit (0.0f, 1.0f, v);
             repaint();
         }

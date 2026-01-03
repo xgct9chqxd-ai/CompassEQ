@@ -772,6 +772,16 @@ static inline juce::String popupTextFor(juce::Slider &s)
     // Frequency knobs (all Freq sliders)
     if (name.containsIgnoreCase("frequency") || name.containsIgnoreCase("freq"))
     {
+        // HPF/LPF: show OFF at true-off endpoints (O on the dial)
+        // HPF off at min (20 Hz), LPF off at max (20 kHz)
+        constexpr double kOffEpsHz = 0.50; // UI-only tolerance (host/automation can land slightly off)
+        const bool isHPF = name.containsIgnoreCase("hpf");
+        const bool isLPF = name.containsIgnoreCase("lpf");
+        if (isHPF && (value <= (double) phase1::Ranges::HPF_DEF + kOffEpsHz))
+            return "OFF";
+        if (isLPF && (value >= (double) phase1::Ranges::LPF_DEF - kOffEpsHz))
+            return "OFF";
+
         if (value >= 1000.0)
             return juce::String(value / 1000.0, 2) + " kHz";
         return juce::String(value, 2) + " Hz";
@@ -904,6 +914,11 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider(
         {
             const float v = juce::jlimit(0.0f, 1.0f, sliderPos);
 
+            // LPF arc fill should read "more filtering" as more fill:
+            // at 20k (OFF) -> minimal fill, as cutoff lowers -> fill increases.
+            const bool isLPF = nm.containsIgnoreCase("LPF");
+            const float vVis = isLPF ? (1.0f - v) : v;
+
             // Visual-only sweep trim (separate from knob travel)
             constexpr float startTrim = 0.0f;
             constexpr float endTrim   = 0.0f;
@@ -911,8 +926,16 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider(
             const float visStartA = rotaryStartAngle + startTrim;
             const float visEndA   = rotaryEndAngle   - endTrim;
 
-            const float startA = visStartA;
-            const float endA   = startA + v * (visEndA - startA);
+            float startA = visStartA;
+            float endA   = startA + vVis * (visEndA - startA);
+
+            // LPF: start fill at OFF position (O = visEndA) and grow "backwards" as cutoff lowers,
+            // so the arc follows the dot's motion.
+            if (isLPF)
+            {
+                startA = visEndA; // OFF end
+                endA   = visEndA - vVis * (visEndA - visStartA);
+            }
 
             const float arcR = r - juce::jmax(6.0f, r * 0.26f);
             juce::Path arc;
