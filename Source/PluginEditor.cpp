@@ -2169,7 +2169,7 @@ void CompassEQAudioProcessorEditor::resized()
         constexpr int bypassH = 26; // STAGE: SSL BYPASS latch (LOCKED)
         // Keep BYPASS where it was, but drop trims slightly to avoid lane overlap.
         const int bypassCy = zone4.getCentreY() - 10;
-        const int trimCy = bypassCy + 10;
+        const int trimCy = bypassCy + 4;
         // BYPASS centered
         const auto bypassBounds = juce::Rectangle<int>(0, 0, bypassW, bypassH)
                                       .withCentre({zone4.getCentreX(), bypassCy});
