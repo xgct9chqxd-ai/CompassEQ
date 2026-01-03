@@ -1336,7 +1336,7 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
             const auto tintLF = wellTint(juce::Colour(0xFF004488));  // deep blue
             const auto tintLMF = wellTint(juce::Colour(0xFF5E3388)); // vivid purple
             const auto tintHMF = wellTint(juce::Colour(0xFF669966)); // punchy olive/green
-            const auto tintHF = wellTint(juce::Colour(0xFFAA4444));  // warm red
+            const auto tintHF = wellTint(juce::Colour(0xFFAA4444).darker(0.12f));  // warm red (darkened)
             drawBandWell(g, laneLF.getSmallestIntegerContainer(), physicalScale, tintLF);
             drawBandWell(g, laneLMF.getSmallestIntegerContainer(), physicalScale, tintLMF);
             drawBandWell(g, laneHMF.getSmallestIntegerContainer(), physicalScale, tintHMF);
