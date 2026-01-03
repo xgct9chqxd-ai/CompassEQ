@@ -1434,8 +1434,8 @@ void CompassEQAudioProcessorEditor::renderStaticLayer(juce::Graphics &g, float s
     drawColLabel("HF", assetSlots.colHF, bandLabelY);
     // Headers
     // Raise filter titles to avoid clashing with scale numbers
-    drawHeaderAbove("HPF", hpfFreq.getBounds(), -30);
-    drawHeaderAbove("LPF", lpfFreq.getBounds(), -30);
+    drawHeaderAbove("HPF", hpfFreq.getBounds(), -29);
+    drawHeaderAbove("LPF", lpfFreq.getBounds(), -29);
     drawHeaderAbove("IN", inputMeter.getBounds(), -16);
     drawHeaderAbove("OUT", outputMeter.getBounds(), -16);
     // Bottom trim labels: move IN/OUT below knobs (centered), and remove any "TRIM" wording.
