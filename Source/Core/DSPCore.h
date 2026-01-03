@@ -50,22 +50,13 @@ public:
     // Step 4D: engage decision uses existing Phase 3 threshold behavior (no new constants)
     inline bool shouldEngageLmfOs() const noexcept
     {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wfloat-equal"
-
         // Use the same gain signal path Phase 3 uses (user gain -> cut restore -> boost protect).
         // Engage OS iff Phase 3 would modify the gain due to extreme boost/cut.
         const float gUser = sanitizeDb ((float) lmfGainDbSm.getCurrentValue());
         const float gCut  = phase3RestoreCutDb (gUser);
         const float gProt = phase3ProtectBoostDb (gCut);
-        auto neq = [](float a, float b) noexcept
-        {
-            return std::abs(a - b) > 1.0e-6f;
-        };
-        return neq(gCut, gUser) || neq(gProt, gCut);
-    
-#pragma clang diagnostic pop
-}
+        return (gCut != gUser) || (gProt != gCut);
+    }
 
     size_t osLmfChannels = 0;
 
@@ -294,24 +285,6 @@ reset();
         const int n   = buffer.getNumSamples();
         const int chs = juce::jmin (channels, buffer.getNumChannels());
 
-        // Pure Mode (Phase 3A): trims only — skip smoothers + filters/EQ entirely
-        if (pureMode)
-        {
-            for (int i = 0; i < n; ++i)
-            {
-                const float inG  = inTrimLin.getNextValue();
-                const float outG = outTrimLin.getNextValue();
-
-                const float g = inG * outG;
-                for (int ch = 0; ch < chs; ++ch)
-                {
-                    auto* d = buffer.getWritePointer (ch);
-                    d[i] *= g;
-                }
-            }
-            return;
-        }
-
         // ===== Phase 4E (LMF OS): engage decision + start/stop crossfade flag (NO audio-path wiring yet) =====
         const bool wantOs = (osLmf != nullptr) && shouldEngageLmfOs();
         if (wantOs != lmfOsEngaged)
@@ -336,6 +309,24 @@ reset();
             }
         }
         // ===== End Phase 4E (LMF OS) =====
+        // Pure Mode (Phase 3A): trims only — skip smoothers + filters/EQ entirely
+        if (pureMode)
+        {
+            for (int i = 0; i < n; ++i)
+            {
+                const float inG  = inTrimLin.getNextValue();
+                const float outG = outTrimLin.getNextValue();
+
+                const float g = inG * outG;
+                for (int ch = 0; ch < chs; ++ch)
+                {
+                    auto* d = buffer.getWritePointer (ch);
+                    d[i] *= g;
+                }
+            }
+            return;
+        }
+
         // ===== Phase 4F-B0 Pass A: pre-LMF capture (cadence preserved; the ONLY place getNextValue + updateFiltersIfNeeded(i) runs) =====
         for (int i = 0; i < n; ++i)
         {
@@ -446,41 +437,20 @@ reset();
             osLmf->processSamplesDown(outBlock);
         }
         else
-{
-    for (int ch = 0; ch < chs; ++ch)
-    {
-        // Phase 6: hoist bounds checks / indexing out of the inner sample loop (behavior-identical)
-        const size_t chZ = (size_t) ch;
-
-        const float* drySrc = nullptr;
-        size_t dryN = 0;
-        if (chZ < lmfPostDryBuf.size())
         {
-            const auto& dry = lmfPostDryBuf[chZ];
-            drySrc = dry.data();
-            dryN = dry.size();
+            for (int ch = 0; ch < chs; ++ch)
+            {
+                for (int i = 0; i < n; ++i)
+                {
+                    const float x = ((size_t) ch < lmfPostDryBuf.size() && (size_t) i < lmfPostDryBuf[(size_t) ch].size())
+                                      ? lmfPostDryBuf[(size_t) ch][(size_t) i]
+                                      : 0.0f;
+
+                    if ((size_t) ch < lmfPostOsBuf.size() && (size_t) i < lmfPostOsBuf[(size_t) ch].size())
+                        lmfPostOsBuf[(size_t) ch][(size_t) i] = x;
+                }
+            }
         }
-
-        float* osDst = nullptr;
-        size_t osN = 0;
-        if (chZ < lmfPostOsBuf.size())
-        {
-            auto& osb = lmfPostOsBuf[chZ];
-            osDst = osb.data();
-            osN = osb.size();
-        }
-
-        for (int i = 0; i < n; ++i)
-        {
-            const size_t iZ = (size_t) i;
-
-            const float x = (iZ < dryN && drySrc != nullptr) ? drySrc[iZ] : 0.0f;
-
-            if (iZ < osN && osDst != nullptr)
-                osDst[iZ] = x;
-        }
-    }
-}
 
         // ===== Phase 4F-B0 Pass C: post-LMF continuation + 4F-A state/select (NO lmfPeak.process here) =====
         for (int i = 0; i < n; ++i)
