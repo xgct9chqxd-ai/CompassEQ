@@ -403,9 +403,13 @@ namespace
                     const auto tTop = cTop.withMultipliedAlpha(kLaneTintMul);
                     const auto tBot = cBot.withMultipliedAlpha(kLaneTintMul);
                     const auto mid = tTop.interpolatedWith(tBot, 0.4f); // pull toward darker
-                    juce::ColourGradient grad(mid, panel.getCentreX(), panel.getY(),
-                                              tBot, panel.getCentreX(), panel.getBottom(),
-                                              false);
+                    // PASS 1: panels recede so controls dominate (hue preserved)
+                    const auto midPanel = mid.withMultipliedSaturation(0.80f).darker(0.12f);
+                    const auto botPanel = tBot.withMultipliedSaturation(0.80f).darker(0.16f);
+                    juce::ColourGradient grad(midPanel, panel.getCentreX(), panel.getY(),
+                                                                       botPanel, panel.getCentreX(), panel.getBottom(),
+                                                                       false);
+
                     g.setGradientFill(grad);
                     g.fillRoundedRectangle(panel, 12.0f);
                     // Pass 1: Reduce visual weight — thinner borders + softer inner "shadow" stroke
@@ -933,11 +937,25 @@ void CompassEQAudioProcessorEditor::CompassLookAndFeel::drawRotarySlider(
                                                   juce::PathStrokeType::curved,
                                                   juce::PathStrokeType::rounded));
 
+            // LMF/HMF authority: subtle cap emphasis (no size change, no glow, no animation)
+            const bool isLMF = nm.startsWith("LMF");
+            const bool isHMF = nm.startsWith("HMF");
+            const float capEmph = (isLMF || isHMF) ? 1.0f : 0.0f;
+
             // brighter edge to prevent low values blending into the base
-            g.setColour(arcCol.brighter(0.25f).withAlpha(0.22f));
+            g.setColour(arcCol.brighter(0.25f + 0.08f * capEmph).withAlpha(0.22f + 0.06f * capEmph));
             g.strokePath(arc, juce::PathStrokeType(juce::jmax(6.4f, r * 0.21f) + 0.9f,
                                                   juce::PathStrokeType::curved,
                                                   juce::PathStrokeType::rounded));
+
+            // thin metallic rim (very subtle catch-light) — LMF/HMF only
+            if (capEmph > 0.5f)
+            {
+                g.setColour(juce::Colours::white.withAlpha(0.06f));
+                g.strokePath(arc, juce::PathStrokeType(1.0f,
+                                                      juce::PathStrokeType::curved,
+                                                      juce::PathStrokeType::rounded));
+            }
         }
 
         // Central grab notch (rotates with value)
@@ -1643,8 +1661,8 @@ if (isHMF600 && i == 0)
         drawScaleMarkings(hfFreq.getBounds(), kFreqHF, (int)(sizeof(kFreqHF) / sizeof(kFreqHF[0])));
         drawScaleMarkings(hfGain.getBounds(), kGain, (int)(sizeof(kGain) / sizeof(kGain[0])));
         // Filters (frequency)
-        static const char *const kFreqHPF[] = {"20", "300", "500", "750", "1k"};
-        static const char *const kFreqLPF[] = {"3k", "7k", "11k", "15k", "20k"};
+        static const char *const kFreqHPF[] = {"O", "300", "500", "750", "1k"};
+        static const char *const kFreqLPF[] = {"3k", "7k", "11k", "15k", "O"};
         drawScaleMarkings(hpfFreq.getBounds(), kFreqHPF, (int)(sizeof(kFreqHPF) / sizeof(kFreqHPF[0])), true);
         drawScaleMarkings(lpfFreq.getBounds(), kFreqLPF, (int)(sizeof(kFreqLPF) / sizeof(kFreqLPF[0])), true);
     }
@@ -1956,9 +1974,11 @@ void CompassEQAudioProcessorEditor::resized()
         constexpr int meterW = 18;
         const int inMeterX = 24;
         const int outMeterX = getWidth() - 24 - meterW;
-        // Bottom anchor: sit above the bottom border, but below trim zone content
-        const int meterBottomPad = 12;
-        const int meterBottomY = getHeight() - meterBottomPad;
+        // Bottom clamp: meters must NOT enter Zone 4 (Trim + Bypass).
+        // Zone 4 starts at z4Y, so stop meters slightly ABOVE that boundary.
+        const int meterBottomPad = 10;              // visual gap above Zone 4
+        const int meterBottomY = z4Y - meterBottomPad;
+
         // Top target: around the middle of the UI (use the filters/bands boundary as a stable "mid")
         const int midY = z3Y; // filters/bands boundary (stable reference)
         // Small top pad so it doesn't kiss the mid line
@@ -2131,10 +2151,20 @@ void CompassEQAudioProcessorEditor::resized()
         const auto bypassBounds = juce::Rectangle<int>(0, 0, bypassW, bypassH)
                                       .withCentre({zone4.getCentreX(), bypassCy});
         globalBypass.setBounds(bypassBounds);
-        // Trims: symmetric around bypass, keep >= 32px spacing (4g)
+        // Trims: align to meter columns (I/O normalization), but keep >= 32px spacing (4g) from BYPASS
         constexpr int minGapToBypass = 32;
-        const int leftTrimCx = bypassBounds.getX() - minGapToBypass - (trimSize / 2);
-        const int rightTrimCx = bypassBounds.getRight() + minGapToBypass + (trimSize / 2);
+
+        // Desired centers: line up with the meter column centers
+        const int desiredLeftCx  = inputMeter.getBounds().getCentreX();
+        const int desiredRightCx = outputMeter.getBounds().getCentreX();
+
+        // Hard safety limits relative to BYPASS so trims never crowd it
+        const int maxLeftCx  = bypassBounds.getX() - minGapToBypass - (trimSize / 2);
+        const int minRightCx = bypassBounds.getRight() + minGapToBypass + (trimSize / 2);
+
+        const int leftTrimCx  = juce::jmin(desiredLeftCx,  maxLeftCx);
+        const int rightTrimCx = juce::jmax(desiredRightCx, minRightCx);
+
         inTrim.setBounds(juce::Rectangle<int>(0, 0, trimSize, trimSize).withCentre({leftTrimCx, trimCy}));
         outTrim.setBounds(juce::Rectangle<int>(0, 0, trimSize, trimSize).withCentre({rightTrimCx, trimCy}));
     }
